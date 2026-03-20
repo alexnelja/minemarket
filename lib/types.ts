@@ -1,10 +1,162 @@
-export interface Deployment {
+// Core enums as TypeScript types
+export type UserRole = 'buyer' | 'seller' | 'both';
+export type KycStatus = 'pending' | 'verified' | 'rejected';
+export type CommodityType = 'chrome' | 'manganese' | 'iron_ore' | 'coal' | 'aggregates';
+export type HarbourType = 'loading' | 'destination' | 'both';
+export type TransportMode = 'road' | 'rail' | 'combined';
+export type ListingStatus = 'active' | 'paused' | 'sold' | 'expired';
+export type AllocationMode = 'open' | 'invite_only';
+export type RequirementStatus = 'active' | 'matched' | 'fulfilled' | 'expired';
+export type DealStatus =
+  | 'interest' | 'first_accept' | 'negotiation' | 'second_accept'
+  | 'escrow_held' | 'loading' | 'in_transit' | 'delivered'
+  | 'escrow_released' | 'completed' | 'disputed' | 'cancelled';
+export type EscrowStatus = 'pending_deposit' | 'held' | 'releasing' | 'released' | 'frozen';
+export type CurrencyType = 'USD' | 'ZAR' | 'EUR';
+export type MilestoneType = 'loaded' | 'departed_port' | 'in_transit' | 'arrived_port' | 'customs' | 'delivered';
+export type DocType = 'bill_of_lading' | 'certificate_of_origin' | 'weighbridge_ticket' | 'lab_report' | 'customs_declaration' | 'invoice';
+export type BadgeLevel = 'standard' | 'premium';
+
+// Database row types
+export interface User {
   id: string;
-  status: string;
-  commit_message: string;
-  branch: string;
-  hash: string;
-  env: string;
+  role: UserRole;
+  company_name: string;
+  country: string;
+  kyc_status: KycStatus;
   created_at: string;
-  author: string;
 }
+
+export interface Harbour {
+  id: string;
+  name: string;
+  location: unknown;
+  country: string;
+  type: HarbourType;
+}
+
+export interface Mine {
+  id: string;
+  name: string;
+  location: unknown;
+  country: string;
+  region: string;
+  commodities: CommodityType[];
+  nearest_harbour_id: string;
+  owner_id: string | null;
+}
+
+export interface Route {
+  id: string;
+  origin_mine_id: string;
+  harbour_id: string;
+  route_geometry: unknown;
+  distance_km: number;
+  transport_mode: TransportMode;
+}
+
+export interface Listing {
+  id: string;
+  seller_id: string;
+  source_mine_id: string;
+  commodity_type: CommodityType;
+  spec_sheet: Record<string, number>;
+  volume_tonnes: number;
+  price_per_tonne: number;
+  currency: CurrencyType;
+  incoterms: string[];
+  loading_port_id: string;
+  is_verified: boolean;
+  allocation_mode: AllocationMode;
+  max_buyers: number | null;
+  preferred_buyer_ids: string[];
+  status: ListingStatus;
+  created_at: string;
+}
+
+export interface Requirement {
+  id: string;
+  buyer_id: string;
+  commodity_type: CommodityType;
+  target_spec_range: Record<string, { min?: number; max?: number }>;
+  volume_needed: number;
+  target_price: number;
+  currency: CurrencyType;
+  delivery_port: string;
+  incoterm: string;
+  status: RequirementStatus;
+  created_at: string;
+}
+
+export interface Deal {
+  id: string;
+  listing_id: string;
+  requirement_id: string | null;
+  buyer_id: string;
+  seller_id: string;
+  commodity_type: CommodityType;
+  volume_tonnes: number;
+  agreed_price: number;
+  currency: CurrencyType;
+  fx_rate_locked: number | null;
+  fx_source_timestamp: string | null;
+  incoterm: string;
+  spec_tolerances: Record<string, unknown>;
+  price_adjustment_rules: Record<string, unknown>;
+  escrow_amount: number | null;
+  escrow_status: EscrowStatus;
+  status: DealStatus;
+  created_at: string;
+  second_accept_at: string | null;
+}
+
+export interface DealMilestone {
+  id: string;
+  deal_id: string;
+  milestone_type: MilestoneType;
+  timestamp: string;
+  location: unknown;
+  location_name: string | null;
+  notes: string | null;
+  created_by: string;
+}
+
+export interface DealDocument {
+  id: string;
+  deal_id: string;
+  doc_type: DocType;
+  file_url: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  verified: boolean;
+}
+
+export interface Verification {
+  id: string;
+  listing_id: string;
+  lab_report_url: string;
+  assay_results: Record<string, number>;
+  verified_at: string;
+  badge_level: BadgeLevel;
+}
+
+export interface Rating {
+  id: string;
+  deal_id: string;
+  rater_id: string;
+  rated_user_id: string;
+  spec_accuracy: number;
+  timeliness: number;
+  communication: number;
+  documentation: number;
+  comment: string | null;
+  created_at: string;
+}
+
+export const COMMODITY_CONFIG: Record<CommodityType, { label: string; color: string }> = {
+  chrome: { label: 'Chrome', color: '#f59e0b' },
+  manganese: { label: 'Manganese', color: '#a78bfa' },
+  iron_ore: { label: 'Iron Ore', color: '#60a5fa' },
+  coal: { label: 'Coal', color: '#6b7280' },
+  aggregates: { label: 'Aggregates', color: '#f97316' },
+};
