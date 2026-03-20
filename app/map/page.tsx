@@ -1,11 +1,13 @@
-export default function MapPage() {
-  return (
-    <div>
-      <h1 className="text-2xl font-bold tracking-tight mb-2">Map View</h1>
-      <p className="text-gray-400 text-sm">Browse mines, listings, and routes on the map.</p>
-      <div className="mt-8 bg-gray-900 border border-gray-800 rounded-xl p-12 text-center text-gray-500">
-        Map view coming in Plan 2
-      </div>
-    </div>
-  );
+import { getMines, getHarbours, getActiveListings, getRoutes } from '@/lib/queries';
+import { MapClient } from './map-client';
+
+export default async function MapPage() {
+  const [mines, harbours, listings, routes] = await Promise.all([
+    getMines(),
+    getHarbours(),
+    getActiveListings(),
+    getRoutes(),
+  ]);
+
+  return <MapClient mines={mines} harbours={harbours} listings={listings} routes={routes} />;
 }
