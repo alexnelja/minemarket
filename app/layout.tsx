@@ -14,6 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css" rel="stylesheet" />
+      </head>
       <body className="bg-gray-950 text-white min-h-screen">
         <div className="flex min-h-screen">
           <Sidebar />
