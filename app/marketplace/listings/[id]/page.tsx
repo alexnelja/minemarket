@@ -19,7 +19,7 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
   const config = COMMODITY_CONFIG[listing.commodity_type];
 
   const specEntries = Object.entries(listing.spec_sheet).filter(
-    ([, value]) => value !== null && value !== undefined && value !== ''
+    ([, value]) => value !== null && value !== undefined
   );
 
   return (
