@@ -1,13 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import type { CommodityType, CurrencyType } from '@/lib/types';
 
-const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP'] as const;
+const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP', 'FCA', 'DAP'] as const;
 const CURRENCIES: CurrencyType[] = ['USD', 'ZAR', 'EUR'];
+
+const INCOTERM_DESCRIPTIONS: Record<string, { short: string; context: 'loading' | 'delivery' }> = {
+  FOB: { short: 'Free On Board — seller delivers to loading port', context: 'loading' },
+  CIF: { short: 'Cost, Insurance & Freight — seller pays freight + insurance to destination', context: 'delivery' },
+  CFR: { short: 'Cost & Freight — seller pays freight to destination, no insurance', context: 'delivery' },
+  EXW: { short: 'Ex Works — buyer arranges all transport from mine', context: 'loading' },
+  DDP: { short: 'Delivered Duty Paid — seller delivers to buyer\'s location, all costs', context: 'delivery' },
+  FCA: { short: 'Free Carrier — seller delivers to carrier at named place', context: 'loading' },
+  DAP: { short: 'Delivered At Place — seller delivers to destination, not unloaded', context: 'delivery' },
+};
 
 const SPEC_FIELDS: Record<CommodityType, { key: string; label: string }[]> = {
   chrome: [
@@ -49,8 +59,32 @@ export default function NewListingPage() {
   const [currency, setCurrency] = useState<CurrencyType>('USD');
   const [selectedIncoterms, setSelectedIncoterms] = useState<string[]>([]);
   const [specs, setSpecs] = useState<Record<string, string>>({});
+  const [loadingPortName, setLoadingPortName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Fetch loading port name for the user's mine on mount (for incoterm display)
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase
+        .from('mines')
+        .select('nearest_harbour_id, harbours(name)')
+        .eq('owner_id', user.id)
+        .limit(1)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const h = (data as any).harbours;
+            if (h && typeof h === 'object' && 'name' in h) {
+              setLoadingPortName(h.name as string);
+            }
+          }
+        });
+    });
+  }, []);
 
   function toggleIncoterm(term: string) {
     setSelectedIncoterms((prev) =>
@@ -60,6 +94,15 @@ export default function NewListingPage() {
 
   function handleSpecChange(key: string, value: string) {
     setSpecs((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function getIncotermLabel(term: string): string {
+    const desc = INCOTERM_DESCRIPTIONS[term];
+    if (!desc) return term;
+    if (desc.context === 'loading' && loadingPortName) {
+      return `${term} ${loadingPortName}`;
+    }
+    return term;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -88,6 +131,22 @@ export default function NewListingPage() {
       if (authError || !authUser) {
         setError('You must be logged in to create a listing.');
         return;
+      }
+
+      // Ensure user profile exists (Fix 4)
+      const { data: profile } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', authUser.id)
+        .single();
+
+      if (!profile) {
+        await supabase.from('users').insert({
+          id: authUser.id,
+          role: 'both',
+          company_name: authUser.email?.split('@')[0] ?? 'Unknown',
+          country: 'ZA',
+        });
       }
 
       // Get first mine for this user (simplified v1)
@@ -230,25 +289,53 @@ export default function NewListingPage() {
           </div>
         </div>
 
-        {/* Incoterms multi-select */}
+        {/* Incoterms multi-select with descriptions */}
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">Incoterms</label>
           <div className="flex flex-wrap gap-2">
-            {INCOTERMS.map((term) => (
-              <button
-                key={term}
-                type="button"
-                onClick={() => toggleIncoterm(term)}
-                className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                  selectedIncoterms.includes(term)
-                    ? 'border-amber-500 text-amber-400 bg-amber-900/20'
-                    : 'border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200'
-                }`}
-              >
-                {term}
-              </button>
-            ))}
+            {INCOTERMS.map((term) => {
+              const isSelected = selectedIncoterms.includes(term);
+              const desc = INCOTERM_DESCRIPTIONS[term];
+              const showPort = desc?.context === 'loading' && loadingPortName;
+              return (
+                <button
+                  key={term}
+                  type="button"
+                  onClick={() => toggleIncoterm(term)}
+                  title={desc?.short}
+                  className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    isSelected
+                      ? 'border-amber-500 text-amber-400 bg-amber-900/20'
+                      : 'border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                  }`}
+                >
+                  {showPort ? `${term} ${loadingPortName}` : term}
+                </button>
+              );
+            })}
           </div>
+          {selectedIncoterms.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {selectedIncoterms.map((term) => {
+                const desc = INCOTERM_DESCRIPTIONS[term];
+                if (!desc) return null;
+                const label = getIncotermLabel(term);
+                return (
+                  <p key={term} className="text-xs text-gray-400">
+                    <span className="text-amber-400 font-medium">{label}</span>
+                    {' — '}
+                    {desc.short.split('—')[1]?.trim()}
+                    {desc.context === 'loading' && loadingPortName && (
+                      <span className="text-gray-500"> · at {loadingPortName}</span>
+                    )}
+                  </p>
+                );
+              })}
+            </div>
+          )}
+          {!loadingPortName && selectedIncoterms.some((t) => INCOTERM_DESCRIPTIONS[t]?.context === 'loading') && (
+            <p className="mt-1 text-xs text-gray-500">Loading port will be determined by your mine&apos;s nearest harbour.</p>
+          )}
         </div>
 
         {/* Commodity-specific spec fields */}

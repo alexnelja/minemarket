@@ -1,13 +1,30 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import type { CommodityType, CurrencyType } from '@/lib/types';
 
-const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP'] as const;
+const INCOTERMS = ['FOB', 'CIF', 'CFR', 'EXW', 'DDP', 'FCA', 'DAP'] as const;
 const CURRENCIES: CurrencyType[] = ['USD', 'ZAR', 'EUR'];
+
+const INCOTERM_DESCRIPTIONS: Record<string, { short: string; context: 'loading' | 'delivery' }> = {
+  FOB: { short: 'Free On Board — seller delivers to loading port', context: 'loading' },
+  CIF: { short: 'Cost, Insurance & Freight — seller pays freight + insurance to destination', context: 'delivery' },
+  CFR: { short: 'Cost & Freight — seller pays freight to destination, no insurance', context: 'delivery' },
+  EXW: { short: 'Ex Works — buyer arranges all transport from mine', context: 'loading' },
+  DDP: { short: 'Delivered Duty Paid — seller delivers to buyer\'s location, all costs', context: 'delivery' },
+  FCA: { short: 'Free Carrier — seller delivers to carrier at named place', context: 'loading' },
+  DAP: { short: 'Delivered At Place — seller delivers to destination, not unloaded', context: 'delivery' },
+};
+
+interface Harbour {
+  id: string;
+  name: string;
+  country: string;
+  type: string;
+}
 
 export default function NewRequirementPage() {
   const router = useRouter();
@@ -15,10 +32,50 @@ export default function NewRequirementPage() {
   const [targetPrice, setTargetPrice] = useState('');
   const [volume, setVolume] = useState('');
   const [deliveryPort, setDeliveryPort] = useState('');
+  const [deliveryPortName, setDeliveryPortName] = useState('');
+  const [portSearch, setPortSearch] = useState('');
+  const [showPortDropdown, setShowPortDropdown] = useState(false);
   const [currency, setCurrency] = useState<CurrencyType>('USD');
   const [incoterm, setIncoterm] = useState('');
+  const [harbours, setHarbours] = useState<Harbour[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Fetch harbours on mount
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from('harbours')
+      .select('id, name, country, type')
+      .order('name')
+      .then(({ data }) => {
+        if (data) setHarbours(data);
+      });
+  }, []);
+
+  // Group harbours for display
+  const zaHarbours = harbours.filter((h) => h.country === 'ZA');
+  const globalHarbours = harbours.filter((h) => h.country !== 'ZA');
+
+  const filteredZA = portSearch
+    ? zaHarbours.filter((h) => h.name.toLowerCase().includes(portSearch.toLowerCase()))
+    : zaHarbours;
+  const filteredGlobal = portSearch
+    ? globalHarbours.filter((h) => h.name.toLowerCase().includes(portSearch.toLowerCase()))
+    : globalHarbours;
+
+  const selectedIncoDesc = incoterm ? INCOTERM_DESCRIPTIONS[incoterm] : null;
+
+  function getIncotermHelperText(): string | null {
+    if (!incoterm || !selectedIncoDesc) return null;
+    if (selectedIncoDesc.context === 'delivery' && deliveryPortName) {
+      return `${incoterm} — ${selectedIncoDesc.short.split('—')[1].trim()} · Port: ${deliveryPortName}`;
+    }
+    if (selectedIncoDesc.context === 'loading') {
+      return `${incoterm} — ${selectedIncoDesc.short.split('—')[1].trim()}`;
+    }
+    return `${incoterm} — ${selectedIncoDesc.short.split('—')[1].trim()}`;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,6 +109,22 @@ export default function NewRequirementPage() {
         return;
       }
 
+      // Ensure user profile exists (Fix 4)
+      const { data: profile } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', authUser.id)
+        .single();
+
+      if (!profile) {
+        await supabase.from('users').insert({
+          id: authUser.id,
+          role: 'both',
+          company_name: authUser.email?.split('@')[0] ?? 'Unknown',
+          country: 'ZA',
+        });
+      }
+
       const { error: insertError } = await supabase.from('requirements').insert({
         buyer_id: authUser.id,
         commodity_type: commodity,
@@ -59,7 +132,7 @@ export default function NewRequirementPage() {
         volume_needed: parseFloat(volume),
         target_price: parseFloat(targetPrice),
         currency,
-        delivery_port: deliveryPort.trim(),
+        delivery_port: deliveryPortName || deliveryPort.trim(),
         incoterm,
         status: 'active',
       });
@@ -138,16 +211,76 @@ export default function NewRequirementPage() {
           </div>
         </div>
 
-        {/* Delivery port */}
-        <div>
+        {/* Delivery port — searchable dropdown from harbours DB */}
+        <div className="relative">
           <label className="block text-sm font-medium text-gray-300 mb-1">Delivery Port</label>
           <input
             type="text"
-            value={deliveryPort}
-            onChange={(e) => setDeliveryPort(e.target.value)}
-            placeholder="e.g. Port of Durban"
+            value={portSearch || deliveryPortName}
+            onChange={(e) => {
+              setPortSearch(e.target.value);
+              setDeliveryPortName('');
+              setDeliveryPort('');
+              setShowPortDropdown(true);
+            }}
+            onFocus={() => setShowPortDropdown(true)}
+            onBlur={() => setTimeout(() => setShowPortDropdown(false), 150)}
+            placeholder="Search for a port…"
             className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-500"
           />
+          {showPortDropdown && (filteredZA.length > 0 || filteredGlobal.length > 0) && (
+            <div className="absolute z-20 mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+              {filteredZA.length > 0 && (
+                <div>
+                  <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-800/60">
+                    Loading Ports — South Africa
+                  </div>
+                  {filteredZA.map((h) => (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onMouseDown={() => {
+                        setDeliveryPort(h.id);
+                        setDeliveryPortName(h.name);
+                        setPortSearch('');
+                        setShowPortDropdown(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-800 transition-colors"
+                    >
+                      {h.name}
+                      <span className="ml-2 text-xs text-gray-500">{h.type}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {filteredGlobal.length > 0 && (
+                <div>
+                  <div className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-800/60">
+                    Destination Ports — Global
+                  </div>
+                  {filteredGlobal.map((h) => (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onMouseDown={() => {
+                        setDeliveryPort(h.id);
+                        setDeliveryPortName(h.name);
+                        setPortSearch('');
+                        setShowPortDropdown(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-800 transition-colors"
+                    >
+                      {h.name}
+                      <span className="ml-2 text-xs text-gray-500">{h.country}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {deliveryPortName && (
+            <p className="mt-1 text-xs text-emerald-400">Selected: {deliveryPortName}</p>
+          )}
         </div>
 
         {/* Currency selector */}
@@ -171,7 +304,7 @@ export default function NewRequirementPage() {
           </div>
         </div>
 
-        {/* Incoterm single-select */}
+        {/* Incoterm single-select with descriptions */}
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">Incoterm</label>
           <div className="flex flex-wrap gap-2">
@@ -190,6 +323,23 @@ export default function NewRequirementPage() {
               </button>
             ))}
           </div>
+          {incoterm && (
+            <p className="mt-2 text-xs text-gray-400">
+              <span className="text-blue-400 font-medium">
+                {deliveryPortName && selectedIncoDesc?.context === 'delivery'
+                  ? `${incoterm} ${deliveryPortName}`
+                  : incoterm}
+              </span>
+              {' — '}
+              {INCOTERM_DESCRIPTIONS[incoterm]?.short.split('—')[1]?.trim()}
+              {deliveryPortName && selectedIncoDesc?.context === 'delivery' && (
+                <span className="text-gray-500"> · delivery to {deliveryPortName}</span>
+              )}
+            </p>
+          )}
+          {incoterm && !getIncotermHelperText() && selectedIncoDesc?.context === 'delivery' && !deliveryPortName && (
+            <p className="mt-1 text-xs text-amber-500">Select a delivery port above to complete the incoterm location context.</p>
+          )}
         </div>
 
         {/* Error */}

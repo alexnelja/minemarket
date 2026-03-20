@@ -70,7 +70,7 @@ export function ListingsPanel({
   const filtered = applyFilters(listings, filters);
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 border-r border-gray-800">
+    <div className="flex flex-col h-full">
       <FilterBar
         filters={filters}
         onFiltersChange={setFilters}

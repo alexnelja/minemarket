@@ -186,9 +186,12 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
   }
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] -m-6 md:-m-10">
-      {/* Left 40%: Listings panel */}
-      <div className="w-2/5 min-w-0 flex flex-col">
+    <div className="relative h-[calc(100vh-5rem)] -m-6 md:-m-10 overflow-hidden">
+      {/* Full-width map behind everything */}
+      <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
+
+      {/* Left overlay: frosted glass listings panel */}
+      <div className="absolute inset-y-0 left-0 w-2/5 min-w-0 flex flex-col z-10 bg-gray-950/85 backdrop-blur-xl border-r border-gray-800/50">
         <ListingsPanel
           listings={listings}
           hoveredListingId={hoveredListingId}
@@ -197,28 +200,23 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         />
       </div>
 
-      {/* Right 60%: Mapbox map */}
-      <div className="relative flex-1">
-        <div ref={mapContainerRef} className="w-full h-full" />
-
-        {/* Legend overlay bottom-left */}
-        <div className="absolute bottom-8 left-3 z-10 bg-gray-900/90 border border-gray-700 rounded-lg p-3 space-y-2 text-xs backdrop-blur-sm">
-          <div className="text-gray-400 font-semibold uppercase tracking-wider mb-1">Legend</div>
-          {(Object.entries(COMMODITY_CONFIG) as [CommodityType, { label: string; color: string }][]).map(
-            ([, config]) => (
-              <div key={config.label} className="flex items-center gap-2 text-gray-300">
-                <span
-                  className="w-2.5 h-2.5 rounded-full flex-none"
-                  style={{ backgroundColor: config.color }}
-                />
-                {config.label}
-              </div>
-            )
-          )}
-          <div className="flex items-center gap-2 text-gray-300 pt-1 border-t border-gray-700">
-            <span className="w-2.5 h-2.5 rounded flex-none bg-emerald-500" />
-            Harbour
-          </div>
+      {/* Legend overlay bottom-right of map area */}
+      <div className="absolute bottom-8 right-3 z-10 bg-gray-950/80 border border-gray-700/50 rounded-lg p-3 space-y-2 text-xs backdrop-blur-md">
+        <div className="text-gray-400 font-semibold uppercase tracking-wider mb-1">Legend</div>
+        {(Object.entries(COMMODITY_CONFIG) as [CommodityType, { label: string; color: string }][]).map(
+          ([, config]) => (
+            <div key={config.label} className="flex items-center gap-2 text-gray-300">
+              <span
+                className="w-2.5 h-2.5 rounded-full flex-none"
+                style={{ backgroundColor: config.color }}
+              />
+              {config.label}
+            </div>
+          )
+        )}
+        <div className="flex items-center gap-2 text-gray-300 pt-1 border-t border-gray-700/50">
+          <span className="w-2.5 h-2.5 rounded flex-none bg-emerald-500" />
+          Harbour
         </div>
       </div>
     </div>

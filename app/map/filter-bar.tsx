@@ -50,7 +50,7 @@ export function FilterBar({ filters, onFiltersChange, listingCount }: FilterBarP
   }
 
   return (
-    <div className="flex-none px-4 py-3 border-b border-gray-800 space-y-3">
+    <div className="flex-none px-4 py-3 border-b border-gray-700/50 bg-gray-950/80 backdrop-blur-md space-y-3">
       {/* Header row */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Filters</span>
@@ -92,7 +92,7 @@ export function FilterBar({ filters, onFiltersChange, listingCount }: FilterBarP
             placeholder="Min"
             value={filters.priceMin ?? ''}
             onChange={handlePriceMin}
-            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
+            className="w-16 bg-gray-800/70 border border-gray-700/60 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
           />
           <span className="text-xs text-gray-600">–</span>
           <input
@@ -100,7 +100,7 @@ export function FilterBar({ filters, onFiltersChange, listingCount }: FilterBarP
             placeholder="Max"
             value={filters.priceMax ?? ''}
             onChange={handlePriceMax}
-            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
+            className="w-16 bg-gray-800/70 border border-gray-700/60 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
           />
         </div>
 
@@ -111,14 +111,14 @@ export function FilterBar({ filters, onFiltersChange, listingCount }: FilterBarP
             placeholder="t"
             value={filters.volumeMin ?? ''}
             onChange={handleVolumeMin}
-            className="w-20 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
+            className="w-20 bg-gray-800/70 border border-gray-700/60 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
           />
         </div>
 
         <select
           value={filters.incoterm ?? ''}
           onChange={handleIncoterm}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-gray-500"
+          className="bg-gray-800/70 border border-gray-700/60 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-gray-500"
         >
           <option value="">All incoterms</option>
           {INCOTERMS.map((t) => (
