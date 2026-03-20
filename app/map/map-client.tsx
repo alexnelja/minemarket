@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { COMMODITY_CONFIG, MineWithGeo, HarbourWithGeo, ListingWithDetails, CommodityType } from '@/lib/types';
+import { fetchRoadRoute, generateOceanRoute, RouteSegment } from '@/lib/routes';
 import { ListingsPanel } from './listings-panel';
 import { FilterBar, Filters } from './filter-bar';
 
@@ -40,26 +41,23 @@ function applyFilters(listings: ListingWithDetails[], filters: Filters): Listing
   });
 }
 
-interface RouteData {
-  origin_mine_id: string;
-  harbour_id: string;
-  mine_location: { lng: number; lat: number };
-  harbour_location: { lng: number; lat: number };
-}
+// Representative global destination port (Shanghai)
+const SHANGHAI: { lng: number; lat: number } = { lng: 121.47, lat: 31.23 };
 
 interface MapClientProps {
   mines: MineWithGeo[];
   harbours: HarbourWithGeo[];
   listings: ListingWithDetails[];
-  routes: RouteData[];
 }
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
-export function MapClient({ mines, harbours, listings, routes }: MapClientProps) {
+export function MapClient({ mines, harbours, listings }: MapClientProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const roadRouteCacheRef = useRef<RouteSegment[]>([]);
+  const mapReadyRef = useRef(false);
   const [hoveredListingId, setHoveredListingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const filteredListings = applyFilters(listings, filters);
@@ -80,39 +78,47 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
 
     map.on('style.load', () => {
-      // --- Route lines ---
-      const routeFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = routes.map((r) => ({
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: [
-            [r.mine_location.lng, r.mine_location.lat],
-            [r.harbour_location.lng, r.harbour_location.lat],
-          ],
-        },
-        properties: {},
-      }));
+      mapReadyRef.current = true;
 
-      map.addSource('routes', {
+      // --- Add empty road-routes source + layer (filled after API calls) ---
+      map.addSource('road-routes', {
         type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: routeFeatures,
-        },
+        data: { type: 'FeatureCollection', features: [] },
       });
 
       map.addLayer({
-        id: 'routes-layer',
+        id: 'road-routes-layer',
         type: 'line',
-        source: 'routes',
+        source: 'road-routes',
         layout: {
           'line-join': 'round',
           'line-cap': 'round',
         },
         paint: {
-          'line-color': '#6b7280',
-          'line-width': 1.5,
-          'line-dasharray': [3, 3],
+          'line-color': '#f59e0b',
+          'line-width': 2,
+          'line-opacity': 0.7,
+        },
+      });
+
+      // --- Add empty ocean-routes source + layer ---
+      map.addSource('ocean-routes', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      map.addLayer({
+        id: 'ocean-routes-layer',
+        type: 'line',
+        source: 'ocean-routes',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': '#3b82f6',
+          'line-width': 2,
+          'line-dasharray': [4, 3],
           'line-opacity': 0.6,
         },
       });
@@ -189,20 +195,122 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
 
         markersRef.current.push(marker);
       }
+
+      // --- Fetch road routes sequentially after map is ready ---
+      fetchRoadRoutesSequentially(map);
     });
 
     return () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
+      mapReadyRef.current = false;
       map.remove();
       mapRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Build a deduplicated list of mine→harbour pairs from listings,
+   * then fetch Mapbox Directions routes sequentially to avoid rate limiting.
+   * Results are cached in roadRouteCacheRef.
+   */
+  async function fetchRoadRoutesSequentially(map: mapboxgl.Map) {
+    // If already cached, just render
+    if (roadRouteCacheRef.current.length > 0) {
+      renderRoadRoutes(map, roadRouteCacheRef.current);
+      return;
+    }
+
+    // Deduplicate mine→harbour pairs using listings + harbours lookup
+    const seen = new Set<string>();
+    const pairs: Array<{ mine: MineWithGeo; harbour: HarbourWithGeo }> = [];
+
+    for (const listing of listings) {
+      const mine = mines.find((m) => m.id === listing.source_mine_id);
+      const harbour = harbours.find((h) => h.id === listing.loading_port_id);
+      if (!mine || !harbour) continue;
+
+      const key = `${mine.id}:${harbour.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({ mine, harbour });
+    }
+
+    const segments: RouteSegment[] = [];
+
+    for (const { mine, harbour } of pairs) {
+      const segment = await fetchRoadRoute(
+        mine.location,
+        harbour.location,
+        `${mine.name} → ${harbour.name}`
+      );
+      if (segment) {
+        segments.push(segment);
+      }
+      // Small delay between requests to avoid rate limiting
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
+    roadRouteCacheRef.current = segments;
+    renderRoadRoutes(map, segments);
+  }
+
+  function renderRoadRoutes(map: mapboxgl.Map, segments: RouteSegment[]) {
+    const source = map.getSource('road-routes') as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    const features: GeoJSON.Feature<GeoJSON.LineString>[] = segments.map((seg) => ({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: seg.coordinates },
+      properties: { label: seg.label, distance_km: seg.distance_km },
+    }));
+
+    source.setData({ type: 'FeatureCollection', features });
+  }
+
+  function renderOceanRoute(map: mapboxgl.Map, listing: ListingWithDetails) {
+    const harbour = harbours.find((h) => h.id === listing.loading_port_id);
+    const from = harbour ? harbour.location : listing.mine_location;
+
+    const segment = generateOceanRoute(
+      from,
+      SHANGHAI,
+      `${listing.harbour_name} → Shanghai`
+    );
+
+    const source = map.getSource('ocean-routes') as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    source.setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: segment.coordinates },
+          properties: { label: segment.label, distance_km: segment.distance_km },
+        },
+      ],
+    });
+  }
+
+  function clearOceanRoute() {
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource('ocean-routes') as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+    source.setData({ type: 'FeatureCollection', features: [] });
+  }
+
   function handleListingHover(id: string | null) {
     setHoveredListingId(id);
 
-    if (!id || !mapRef.current) return;
+    if (!mapRef.current) return;
+
+    if (!id) {
+      clearOceanRoute();
+      return;
+    }
+
     const listing = listings.find((l) => l.id === id);
     if (!listing) return;
 
@@ -214,11 +322,14 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
 
   function handleListingClick(listing: ListingWithDetails) {
     if (!mapRef.current) return;
+
     mapRef.current.flyTo({
       center: [listing.mine_location.lng, listing.mine_location.lat],
       zoom: 8,
       duration: 1000,
     });
+
+    renderOceanRoute(mapRef.current, listing);
   }
 
   return (
@@ -264,6 +375,21 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
           <div className="flex items-center gap-2 text-gray-300 pt-1 border-t border-gray-700/50">
             <span className="w-2.5 h-2.5 rounded flex-none bg-emerald-500" />
             Harbour
+          </div>
+          <div className="pt-1 border-t border-gray-700/50 space-y-1.5">
+            <div className="flex items-center gap-2 text-gray-300">
+              <span className="flex-none w-5 h-0.5 rounded" style={{ backgroundColor: '#f59e0b' }} />
+              Road haul
+            </div>
+            <div className="flex items-center gap-2 text-gray-300">
+              <span
+                className="flex-none w-5 h-0.5 rounded"
+                style={{
+                  background: `repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 7px)`,
+                }}
+              />
+              Ocean freight
+            </div>
           </div>
         </div>
       </div>
