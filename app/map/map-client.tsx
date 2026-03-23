@@ -5,8 +5,9 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import Link from 'next/link';
 import { COMMODITY_CONFIG, MineWithGeo, HarbourWithGeo, ListingWithDetails, CommodityType } from '@/lib/types';
-import { fetchRoadRoute, generateOceanRoute, buildRailRoute, RouteSegment } from '@/lib/routes';
+import { fetchRoadRoute, generateOceanRoute, RouteSegment } from '@/lib/routes';
 import type { RouteRow } from '@/lib/queries';
+import { TRANSNET_RAIL_NETWORK, RAIL_COLORS, RAIL_WIDTHS, RAIL_LABELS, type RailLine } from '@/lib/transnet-rail';
 import { ListingsPanel } from './listings-panel';
 import { FilterBar, Filters } from './filter-bar';
 
@@ -66,7 +67,8 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
   const highlightMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const [selectedHarbour, setSelectedHarbour] = useState<HarbourWithGeo | null>(null);
-  const savedViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
+  const [selectedRailLine, setSelectedRailLine] = useState<RailLine | null>(null);
+  const savedViewRef = useRef<{ center: [number, number]; zoom: number; pitch: number } | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const filteredListings = applyFilters(listings, filters);
 
@@ -88,23 +90,48 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     map.on('style.load', () => {
       mapReadyRef.current = true;
 
-      // --- Rail corridors source + layer (amber solid) ---
-      map.addSource('rail-routes', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
+      // --- Transnet Rail Network from KML data ---
+      // Group lines by classification and render each as a separate layer
+      const classifications = ['heavyhaul30t', 'heavyhaul26t', 'mainline20t', 'branchline18t'] as const;
 
-      map.addLayer({
-        id: 'rail-routes-layer',
-        type: 'line',
-        source: 'rail-routes',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': '#f59e0b',
-          'line-width': 3,
-          'line-opacity': 0.8,
-        },
-      });
+      for (const cls of classifications) {
+        const lines = TRANSNET_RAIL_NETWORK.filter((l) => l.classification === cls);
+        const features: GeoJSON.Feature<GeoJSON.LineString>[] = lines.map((line) => ({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: line.coordinates },
+          properties: { name: line.name, classification: cls },
+        }));
+
+        map.addSource(`rail-${cls}`, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features },
+        });
+
+        map.addLayer({
+          id: `rail-${cls}-layer`,
+          type: 'line',
+          source: `rail-${cls}`,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': RAIL_COLORS[cls],
+            'line-width': RAIL_WIDTHS[cls],
+            'line-opacity': 0.75,
+          },
+        });
+
+        // Click handler for rail lines
+        map.on('click', `rail-${cls}-layer`, (e) => {
+          if (e.features && e.features[0]) {
+            const name = e.features[0].properties?.name;
+            const railLine = TRANSNET_RAIL_NETWORK.find((l) => l.name === name);
+            if (railLine) openRailDetail(railLine);
+          }
+        });
+
+        // Cursor change on hover
+        map.on('mouseenter', `rail-${cls}-layer`, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', `rail-${cls}-layer`, () => { map.getCanvas().style.cursor = ''; });
+      }
 
       // --- Road haul source + layer (gray dashed, thinner) ---
       map.addSource('road-routes', {
@@ -206,9 +233,6 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         markersRef.current.push(marker);
       }
 
-      // --- Render rail corridors immediately from stored geometry ---
-      renderRailRoutes(map);
-
       // --- Fetch road routes from Mapbox Directions API ---
       fetchRoadRoutesSequentially(map);
     });
@@ -221,40 +245,6 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
       mapRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /**
-   * Render rail corridors from stored route_geometry (no API calls needed).
-   */
-  function renderRailRoutes(map: mapboxgl.Map) {
-    const source = map.getSource('rail-routes') as mapboxgl.GeoJSONSource | undefined;
-    if (!source) return;
-
-    const railRows = routes.filter((r) => r.transport_mode === 'rail');
-    const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
-
-    for (const row of railRows) {
-      const mine = mines.find((m) => m.id === row.origin_mine_id);
-      const harbour = harbours.find((h) => h.id === row.harbour_id);
-      if (!mine || !harbour) continue;
-
-      const label = `${mine.name} → ${harbour.name}`;
-      const seg = buildRailRoute(
-        row.mine_location,
-        row.harbour_location,
-        row.route_geometry,
-        label,
-        0
-      );
-
-      features.push({
-        type: 'Feature',
-        geometry: { type: 'LineString', coordinates: seg.coordinates },
-        properties: { label: seg.label },
-      });
-    }
-
-    source.setData({ type: 'FeatureCollection', features });
-  }
 
   /**
    * Build a deduplicated list of road mine→harbour pairs from routes data,
@@ -374,42 +364,61 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     'Gqeberha': { operator: 'Transnet Port Terminals', capacity: '4 Mtpa manganese', berths: '1 manganese berth, 2 general cargo', commodities: 'Manganese (legacy terminal)', depth: '11.4m draft' },
   };
 
-  function openHarbourDetail(harbour: HarbourWithGeo) {
+  function saveView() {
     const map = mapRef.current;
     if (!map) return;
-
-    // Save current view to restore later
     const center = map.getCenter();
-    savedViewRef.current = { center: [center.lng, center.lat], zoom: map.getZoom() };
-
-    // Clear any listing selection
-    clearSelection();
-
-    setSelectedHarbour(harbour);
-
-    // Zoom into the harbour for a berth-level view
-    map.flyTo({
-      center: [harbour.location.lng, harbour.location.lat],
-      zoom: 14,
-      duration: 1500,
-      pitch: 45,
-    });
+    savedViewRef.current = { center: [center.lng, center.lat], zoom: map.getZoom(), pitch: map.getPitch() };
   }
 
-  function closeHarbourDetail() {
+  function restoreView() {
     const map = mapRef.current;
-    setSelectedHarbour(null);
-
-    // Restore previous view
     if (map && savedViewRef.current) {
       map.flyTo({
         center: savedViewRef.current.center,
         zoom: savedViewRef.current.zoom,
+        pitch: savedViewRef.current.pitch,
         duration: 1200,
-        pitch: 0,
       });
       savedViewRef.current = null;
     }
+  }
+
+  function openHarbourDetail(harbour: HarbourWithGeo) {
+    const map = mapRef.current;
+    if (!map) return;
+    saveView();
+    clearSelection();
+    setSelectedRailLine(null);
+    setSelectedHarbour(harbour);
+    map.flyTo({ center: [harbour.location.lng, harbour.location.lat], zoom: 14, duration: 1500, pitch: 45 });
+  }
+
+  function closeHarbourDetail() {
+    setSelectedHarbour(null);
+    restoreView();
+  }
+
+  function openRailDetail(line: RailLine) {
+    const map = mapRef.current;
+    if (!map) return;
+    saveView();
+    clearSelection();
+    setSelectedHarbour(null);
+    setSelectedRailLine(line);
+
+    // Fit to rail line bounds
+    const lngs = line.coordinates.map((c) => c[0]);
+    const lats = line.coordinates.map((c) => c[1]);
+    map.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      { padding: { top: 100, bottom: 60, left: panelWidth + 40, right: 80 }, duration: 1200 }
+    );
+  }
+
+  function closeRailDetail() {
+    setSelectedRailLine(null);
+    restoreView();
   }
 
   function clearSelection() {
@@ -694,6 +703,36 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         );
       })()}
 
+      {/* Rail line detail panel */}
+      {selectedRailLine && (
+        <div className="absolute top-24 right-4 z-30 bg-gray-950/20 backdrop-blur-xl border border-white/10 rounded-xl p-4 w-80 shadow-2xl">
+          <button
+            onClick={closeRailDetail}
+            className="absolute top-2 right-2 text-gray-400 hover:text-white text-sm w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10"
+          >×</button>
+
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-8 h-1 rounded" style={{ backgroundColor: RAIL_COLORS[selectedRailLine.classification] }} />
+            <span className="text-xs text-gray-500">{RAIL_LABELS[selectedRailLine.classification]}</span>
+          </div>
+
+          <h3 className="text-sm font-semibold text-white mb-1">{selectedRailLine.name}</h3>
+          <p className="text-xs text-gray-400 mb-3">{selectedRailLine.description}</p>
+
+          <div className="space-y-2 text-xs">
+            <div><span className="text-gray-500">Length</span><p className="text-gray-200">{selectedRailLine.length_km} km</p></div>
+            <div><span className="text-gray-500">Capacity</span><p className="text-gray-200">{selectedRailLine.capacity}</p></div>
+            <div><span className="text-gray-500">Commodities</span><p className="text-gray-200">{selectedRailLine.commodities}</p></div>
+            <div><span className="text-gray-500">Operator</span><p className="text-gray-200">{selectedRailLine.operator}</p></div>
+            <div><span className="text-gray-500">Electrification</span><p className="text-gray-200">{selectedRailLine.electrification}</p></div>
+          </div>
+
+          <div className="mt-3 pt-2 border-t border-white/5 text-[10px] text-gray-500">
+            Click × to return to previous view
+          </div>
+        </div>
+      )}
+
       {/* Legend overlay bottom-right of map area */}
         <div className="absolute bottom-8 right-3 z-10 bg-gray-950/20 border border-white/5 rounded-lg p-3 space-y-2 text-xs backdrop-blur-xl">
           <div className="text-gray-400 font-semibold uppercase tracking-wider mb-1">Legend</div>
@@ -713,26 +752,18 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
             Harbour
           </div>
           <div className="pt-1 border-t border-gray-700/50 space-y-1.5">
+            {Object.entries(RAIL_LABELS).map(([cls, label]) => (
+              <div key={cls} className="flex items-center gap-2 text-gray-300">
+                <span className="flex-none w-5 rounded" style={{ backgroundColor: RAIL_COLORS[cls], height: RAIL_WIDTHS[cls] }} />
+                {label}
+              </div>
+            ))}
             <div className="flex items-center gap-2 text-gray-300">
-              <span className="flex-none w-5 h-0.5 rounded" style={{ backgroundColor: '#f59e0b' }} />
-              Rail corridor
-            </div>
-            <div className="flex items-center gap-2 text-gray-300">
-              <span
-                className="flex-none w-5 h-0.5 rounded"
-                style={{
-                  background: `repeating-linear-gradient(to right, #6b7280 0, #6b7280 4px, transparent 4px, transparent 8px)`,
-                }}
-              />
+              <span className="flex-none w-5 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(to right, #6b7280 0, #6b7280 4px, transparent 4px, transparent 8px)' }} />
               Road haul
             </div>
             <div className="flex items-center gap-2 text-gray-300">
-              <span
-                className="flex-none w-5 h-0.5 rounded"
-                style={{
-                  background: `repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 7px)`,
-                }}
-              />
+              <span className="flex-none w-5 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 7px)' }} />
               Ocean freight
             </div>
           </div>
