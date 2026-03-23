@@ -94,7 +94,23 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     map.on('style.load', () => {
       mapReadyRef.current = true;
 
-      // --- Transnet Rail Network from KML data ---
+      // --- OpenStreetMap Rail Network (background — real track geometry) ---
+      fetch('/za-railways.geojson')
+        .then((res) => res.json())
+        .then((geojson) => {
+          if (!map.getSource('osm-rail-bg')) {
+            map.addSource('osm-rail-bg', { type: 'geojson', data: geojson });
+            map.addLayer({
+              id: 'osm-rail-bg-layer',
+              type: 'line',
+              source: 'osm-rail-bg',
+              paint: { 'line-color': '#475569', 'line-width': 0.8, 'line-opacity': 0.35 },
+            }, Object.keys(RAIL_COLORS).map(c => `rail-${c}-layer`).find(id => map.getLayer(id)) || undefined);
+          }
+        })
+        .catch(() => {}); // Silent fail if file not found
+
+      // --- Transnet Rail Network from KML data (classified overlay) ---
       // Group lines by classification and render each as a separate layer
       const classifications = ['heavyhaul30t', 'heavyhaul26t', 'mainline20t', 'branchline18t'] as const;
 
