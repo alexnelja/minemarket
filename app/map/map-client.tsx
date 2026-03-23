@@ -94,7 +94,7 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     map.on('style.load', () => {
       mapReadyRef.current = true;
 
-      // --- OpenStreetMap Rail Network (background — real track geometry) ---
+      // --- OpenStreetMap Rail Network (background — full network, subtle) ---
       fetch('/za-railways.geojson')
         .then((res) => res.json())
         .then((geojson) => {
@@ -104,56 +104,118 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
               id: 'osm-rail-bg-layer',
               type: 'line',
               source: 'osm-rail-bg',
-              paint: { 'line-color': '#475569', 'line-width': 0.8, 'line-opacity': 0.35 },
-            }, Object.keys(RAIL_COLORS).map(c => `rail-${c}-layer`).find(id => map.getLayer(id)) || undefined);
+              paint: { 'line-color': '#475569', 'line-width': 0.8, 'line-opacity': 0.3 },
+            });
           }
         })
-        .catch(() => {}); // Silent fail if file not found
+        .catch(() => {});
 
-      // --- Transnet Rail Network from KML data (classified overlay) ---
-      // Group lines by classification and render each as a separate layer
-      const classifications = ['heavyhaul30t', 'heavyhaul26t', 'mainline20t', 'branchline18t'] as const;
+      // --- Classified freight corridors with REAL OSM track geometry ---
+      // Map corridor IDs from rail-corridors.json to Transnet classifications
+      const corridorMapping: Record<string, { classification: string; transnetName: string }> = {
+        orex: { classification: 'heavyhaul30t', transnetName: 'OREX Line — Sishen to Saldanha' },
+        coallink: { classification: 'heavyhaul26t', transnetName: 'Coal Line — Ermelo to Richards Bay' },
+        manganese: { classification: 'heavyhaul26t', transnetName: 'Manganese Corridor — Hotazel to Ngqura' },
+        container: { classification: 'mainline20t', transnetName: 'Container Corridor — Durban to Johannesburg' },
+        cape: { classification: 'mainline20t', transnetName: 'Cape Corridor — Kimberley to Cape Town' },
+        randnatal: { classification: 'mainline20t', transnetName: 'Rand-Natal Line' },
+        capenatal: { classification: 'mainline20t', transnetName: 'Cape-Natal Cross Line' },
+        northern: { classification: 'mainline20t', transnetName: 'Northern Line' },
+      };
 
-      for (const cls of classifications) {
-        const lines = TRANSNET_RAIL_NETWORK.filter((l) => l.classification === cls);
-        const features: GeoJSON.Feature<GeoJSON.LineString>[] = lines.map((line) => ({
-          type: 'Feature',
-          geometry: { type: 'LineString', coordinates: line.coordinates },
-          properties: { name: line.name, classification: cls },
-        }));
+      fetch('/rail-corridors.json')
+        .then((res) => res.json())
+        .then((corridorData: Record<string, { lines: [number, number][][]; count: number }>) => {
+          // Group by classification
+          const byClass: Record<string, GeoJSON.Feature<GeoJSON.MultiLineString>[]> = {};
 
-        map.addSource(`rail-${cls}`, {
-          type: 'geojson',
-          data: { type: 'FeatureCollection', features },
-        });
+          for (const [id, geom] of Object.entries(corridorData)) {
+            const mapping = corridorMapping[id];
+            if (!mapping) continue;
+            const cls = mapping.classification;
+            if (!byClass[cls]) byClass[cls] = [];
 
-        map.addLayer({
-          id: `rail-${cls}-layer`,
-          type: 'line',
-          source: `rail-${cls}`,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: {
-            'line-color': RAIL_COLORS[cls],
-            'line-width': RAIL_WIDTHS[cls],
-            'line-opacity': 0.75,
-          },
-        });
+            byClass[cls].push({
+              type: 'Feature',
+              geometry: { type: 'MultiLineString', coordinates: geom.lines },
+              properties: { name: mapping.transnetName, classification: cls },
+            });
+          }
 
-        // Click handler for rail lines
-        map.on('click', `rail-${cls}-layer`, (e) => {
-          if (e.features && e.features[0]) {
-            const name = e.features[0].properties?.name;
-            const railLine = TRANSNET_RAIL_NETWORK.find((l) => l.name === name);
-            if (railLine) openRailDetail(railLine);
+          // Also add KML-only corridors not in OSM (Waterberg, Steelpoort, Maputo, Phalaborwa, Central)
+          const kmlOnly = TRANSNET_RAIL_NETWORK.filter(l =>
+            !Object.values(corridorMapping).some(m => m.transnetName === l.name)
+          );
+          for (const line of kmlOnly) {
+            const cls = line.classification;
+            if (!byClass[cls]) byClass[cls] = [];
+            byClass[cls].push({
+              type: 'Feature',
+              geometry: { type: 'MultiLineString', coordinates: [line.coordinates] },
+              properties: { name: line.name, classification: cls },
+            });
+          }
+
+          // Render each classification as a layer
+          const classifications = ['heavyhaul30t', 'heavyhaul26t', 'mainline20t'] as const;
+          for (const cls of classifications) {
+            const features = byClass[cls] || [];
+            if (features.length === 0) continue;
+
+            map.addSource(`rail-${cls}`, {
+              type: 'geojson',
+              data: { type: 'FeatureCollection', features },
+            });
+
+            map.addLayer({
+              id: `rail-${cls}-layer`,
+              type: 'line',
+              source: `rail-${cls}`,
+              layout: { 'line-join': 'round', 'line-cap': 'round' },
+              paint: {
+                'line-color': RAIL_COLORS[cls],
+                'line-width': RAIL_WIDTHS[cls],
+                'line-opacity': 0.75,
+                'line-dasharray': [8, 4], // Dashed for rail
+              },
+            });
+
+            // Click handler
+            map.on('click', `rail-${cls}-layer`, (e) => {
+              if (e.features && e.features[0]) {
+                const name = e.features[0].properties?.name;
+                const railLine = TRANSNET_RAIL_NETWORK.find((l) => l.name === name);
+                if (railLine) openRailDetail(railLine);
+              }
+            });
+
+            map.on('mouseenter', `rail-${cls}-layer`, () => { map.getCanvas().style.cursor = 'pointer'; });
+            map.on('mouseleave', `rail-${cls}-layer`, () => { map.getCanvas().style.cursor = ''; });
+          }
+        })
+        .catch(() => {
+          // Fallback: use KML data if OSM corridors fail to load
+          const classifications = ['heavyhaul30t', 'heavyhaul26t', 'mainline20t'] as const;
+          for (const cls of classifications) {
+            const lines = TRANSNET_RAIL_NETWORK.filter((l) => l.classification === cls);
+            const features: GeoJSON.Feature<GeoJSON.MultiLineString>[] = lines.map((line) => ({
+              type: 'Feature',
+              geometry: { type: 'MultiLineString', coordinates: [line.coordinates] },
+              properties: { name: line.name, classification: cls },
+            }));
+
+            map.addSource(`rail-${cls}`, { type: 'geojson', data: { type: 'FeatureCollection', features } });
+            map.addLayer({
+              id: `rail-${cls}-layer`,
+              type: 'line',
+              source: `rail-${cls}`,
+              layout: { 'line-join': 'round', 'line-cap': 'round' },
+              paint: { 'line-color': RAIL_COLORS[cls], 'line-width': RAIL_WIDTHS[cls], 'line-opacity': 0.75, 'line-dasharray': [8, 4] },
+            });
           }
         });
 
-        // Cursor change on hover
-        map.on('mouseenter', `rail-${cls}-layer`, () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', `rail-${cls}-layer`, () => { map.getCanvas().style.cursor = ''; });
-      }
-
-      // --- Road haul source + layer (gray dashed, thinner) ---
+      // --- Road haul source + layer (dotted, thinner) ---
       map.addSource('road-routes', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -167,7 +229,7 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         paint: {
           'line-color': '#6b7280',
           'line-width': 1.5,
-          'line-dasharray': [4, 4],
+          'line-dasharray': [1, 3], // Dotted for road
           'line-opacity': 0.65,
         },
       });
@@ -484,7 +546,7 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
                   'line-color': corridor.color,
                   'line-width': Math.max(2, Math.min(6, corridor.volume_mtpa / 3)),
                   'line-opacity': 0.7,
-                  'line-dasharray': [6, 3],
+                  'line-dasharray': [1, 3], // Dotted for road corridors
                 },
               });
 
