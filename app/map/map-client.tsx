@@ -8,6 +8,7 @@ import { COMMODITY_CONFIG, MineWithGeo, HarbourWithGeo, ListingWithDetails, Comm
 import { fetchRoadRoute, generateOceanRoute, RouteSegment } from '@/lib/routes';
 import type { RouteRow } from '@/lib/queries';
 import { TRANSNET_RAIL_NETWORK, RAIL_COLORS, RAIL_WIDTHS, RAIL_LABELS, type RailLine } from '@/lib/transnet-rail';
+import { COMMODITY_CORRIDORS, type CommodityCorridor } from '@/lib/commodity-corridors';
 import { ListingsPanel } from './listings-panel';
 import { FilterBar, Filters } from './filter-bar';
 
@@ -68,6 +69,9 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
   const highlightMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const [selectedHarbour, setSelectedHarbour] = useState<HarbourWithGeo | null>(null);
   const [selectedRailLine, setSelectedRailLine] = useState<RailLine | null>(null);
+  const [selectedCorridor, setSelectedCorridor] = useState<CommodityCorridor | null>(null);
+  const [showCorridors, setShowCorridors] = useState(false);
+  const corridorSourcesRef = useRef<string[]>([]);
   const savedViewRef = useRef<{ center: [number, number]; zoom: number; pitch: number } | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const filteredListings = applyFilters(listings, filters);
@@ -421,6 +425,124 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     restoreView();
   }
 
+  // Render commodity corridors on the map
+  async function renderCorridors() {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current) return;
+
+    // Clear existing corridor layers
+    clearCorridorLayers();
+
+    for (const corridor of COMMODITY_CORRIDORS) {
+      const srcId = `corridor-${corridor.id}`;
+      const layerId = `corridor-${corridor.id}-layer`;
+
+      if (corridor.mode === 'road' && corridor.roadWaypoints) {
+        // Fetch real road geometry from Mapbox Directions API
+        const wp = corridor.roadWaypoints;
+        const coordStr = wp.map(([lng, lat]) => `${lng},${lat}`).join(';');
+        const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+        try {
+          const res = await fetch(
+            `https://api.mapbox.com/directions/v5/mapbox/driving/${coordStr}?geometries=geojson&overview=full&access_token=${token}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const route = data.routes?.[0];
+            if (route) {
+              map.addSource(srcId, {
+                type: 'geojson',
+                data: {
+                  type: 'Feature',
+                  geometry: route.geometry,
+                  properties: { name: corridor.name, volume: corridor.volume_mtpa },
+                },
+              });
+
+              map.addLayer({
+                id: layerId,
+                type: 'line',
+                source: srcId,
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: {
+                  'line-color': corridor.color,
+                  'line-width': Math.max(2, Math.min(6, corridor.volume_mtpa / 3)),
+                  'line-opacity': 0.7,
+                  'line-dasharray': [6, 3],
+                },
+              });
+
+              corridorSourcesRef.current.push(srcId);
+
+              // Click handler
+              map.on('click', layerId, () => setSelectedCorridor(corridor));
+              map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+              map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+            }
+          }
+        } catch { /* skip failed fetches */ }
+
+        // Small delay between API calls
+        await new Promise((r) => setTimeout(r, 200));
+      } else if (corridor.mode === 'rail' && corridor.railLineName) {
+        // Rail corridors reference existing Transnet lines — highlight them
+        const railLine = TRANSNET_RAIL_NETWORK.find((l) => l.name === corridor.railLineName);
+        if (railLine) {
+          map.addSource(srcId, {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: railLine.coordinates },
+              properties: { name: corridor.name, volume: corridor.volume_mtpa },
+            },
+          });
+
+          // Wider glow behind the existing rail line to show commodity flow
+          map.addLayer({
+            id: layerId,
+            type: 'line',
+            source: srcId,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+              'line-color': corridor.color,
+              'line-width': Math.max(3, Math.min(8, corridor.volume_mtpa / 4)),
+              'line-opacity': 0.4,
+              'line-blur': 3,
+            },
+          });
+
+          corridorSourcesRef.current.push(srcId);
+
+          map.on('click', layerId, () => setSelectedCorridor(corridor));
+          map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+        }
+      }
+    }
+  }
+
+  function clearCorridorLayers() {
+    const map = mapRef.current;
+    if (!map) return;
+    for (const srcId of corridorSourcesRef.current) {
+      const layerId = `${srcId.replace('corridor-', 'corridor-')}-layer`;
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(srcId)) map.removeSource(srcId);
+    }
+    corridorSourcesRef.current = [];
+  }
+
+  function toggleCorridors() {
+    if (showCorridors) {
+      clearCorridorLayers();
+      setShowCorridors(false);
+      setSelectedCorridor(null);
+    } else {
+      setShowCorridors(true);
+      renderCorridors();
+    }
+  }
+
   function clearSelection() {
     // Remove highlight markers
     highlightMarkersRef.current.forEach((m) => m.remove());
@@ -558,6 +680,57 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
           listingCount={filteredListings.length}
         />
       </div>
+
+      {/* Corridor toggle button */}
+      <button
+        onClick={toggleCorridors}
+        className={`absolute top-[92px] right-4 z-20 text-xs px-3 py-1.5 rounded-lg backdrop-blur-xl border transition-colors ${
+          showCorridors
+            ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+            : 'bg-gray-950/20 text-gray-400 border-white/10 hover:text-white'
+        }`}
+      >
+        {showCorridors ? '● Corridors ON' : '○ Show Corridors'}
+      </button>
+
+      {/* Corridor detail panel */}
+      {selectedCorridor && (
+        <div className="absolute top-28 right-4 z-30 bg-gray-950/20 backdrop-blur-xl border border-white/10 rounded-xl p-4 w-72 shadow-2xl">
+          <button
+            onClick={() => setSelectedCorridor(null)}
+            className="absolute top-2 right-2 text-gray-400 hover:text-white text-sm w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10"
+          >×</button>
+
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-6 h-1 rounded" style={{ backgroundColor: selectedCorridor.color }} />
+            <span className="text-[10px] uppercase text-gray-500">
+              {selectedCorridor.mode === 'road' ? 'Road Corridor' : 'Rail Corridor'}
+            </span>
+          </div>
+
+          <h3 className="text-sm font-semibold text-white mb-1">{selectedCorridor.name}</h3>
+          <p className="text-xs text-gray-400 mb-3">{selectedCorridor.description}</p>
+
+          <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+            <div>
+              <span className="text-gray-500">Volume</span>
+              <p className="text-white font-semibold">{selectedCorridor.volume_mtpa} Mtpa</p>
+            </div>
+            <div>
+              <span className="text-gray-500">Commodity</span>
+              <p className="text-white capitalize">{selectedCorridor.commodity.replace('_', ' ')}</p>
+            </div>
+            <div>
+              <span className="text-gray-500">Source</span>
+              <p className="text-gray-200">{selectedCorridor.source}</p>
+            </div>
+            <div>
+              <span className="text-gray-500">Destination</span>
+              <p className="text-gray-200">{selectedCorridor.destination}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Listings panel - left overlay, transparent, below filter bar */}
       <div
