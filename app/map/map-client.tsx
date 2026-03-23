@@ -65,6 +65,8 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
   const [selectedListing, setSelectedListing] = useState<ListingWithDetails | null>(null);
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
   const highlightMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const [selectedHarbour, setSelectedHarbour] = useState<HarbourWithGeo | null>(null);
+  const savedViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const filteredListings = applyFilters(listings, filters);
 
@@ -192,24 +194,13 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         el.style.border = '2px solid rgba(255,255,255,0.25)';
         el.style.cursor = 'pointer';
 
-        const popupHtml = `
-          <div style="font-family: sans-serif; padding: 4px 2px;">
-            <div style="font-weight: 600; font-size: 13px; color: #f9fafb; margin-bottom: 2px;">${harbour.name}</div>
-            <div style="font-size: 11px; color: #9ca3af;">${harbour.country} · ${harbour.type}</div>
-          </div>
-        `;
-
-        const popup = new mapboxgl.Popup({ offset: 10, closeButton: false })
-          .setHTML(popupHtml);
-
         const marker = new mapboxgl.Marker({ element: el })
           .setLngLat([harbour.location.lng, harbour.location.lat])
-          .setPopup(popup)
           .addTo(map);
 
         el.addEventListener('click', (e) => {
           e.stopPropagation();
-          popup.addTo(map);
+          openHarbourDetail(harbour);
         });
 
         markersRef.current.push(marker);
@@ -371,21 +362,54 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
 
   function handleListingHover(id: string | null) {
     setHoveredListingId(id);
+  }
 
-    if (!mapRef.current) return;
+  // Harbour infrastructure data
+  const harbourInfo: Record<string, { operator: string; capacity: string; berths: string; commodities: string; depth: string }> = {
+    'Richards Bay': { operator: 'Transnet Port Terminals', capacity: '91 Mtpa (RBCT coal terminal)', berths: '4 coal berths, 2 dry bulk, 3 multipurpose', commodities: 'Coal, chrome, iron ore', depth: '17.5m draft' },
+    'Saldanha Bay': { operator: 'Transnet Port Terminals', capacity: '60 Mtpa (iron ore terminal)', berths: '1 iron ore berth (342m), 1 multipurpose', commodities: 'Iron ore (93% of SA exports)', depth: '21.5m draft (Cape-size)' },
+    'Durban': { operator: 'Transnet Port Terminals', capacity: '31 Mtpa total, 12 Mtpa dry bulk', berths: '57 berths across 7 terminals', commodities: 'Manganese, chrome, containers', depth: '12.8m draft' },
+    'Maputo': { operator: 'Grindrod / MPDC', capacity: '7.5 Mtpa (expanding to 20 Mtpa)', berths: '2 bulk berths, 1 container', commodities: 'Chrome ore (49% of SA chrome to China)', depth: '14.0m draft' },
+    'Port Ngqura': { operator: 'Transnet Port Terminals', capacity: '16 Mtpa manganese terminal', berths: '2 manganese berths, 2 container', commodities: 'Manganese ore (primary)', depth: '18.0m draft' },
+    'Gqeberha': { operator: 'Transnet Port Terminals', capacity: '4 Mtpa manganese', berths: '1 manganese berth, 2 general cargo', commodities: 'Manganese (legacy terminal)', depth: '11.4m draft' },
+  };
 
-    if (!id) {
-      clearOceanRoute();
-      return;
-    }
+  function openHarbourDetail(harbour: HarbourWithGeo) {
+    const map = mapRef.current;
+    if (!map) return;
 
-    const listing = listings.find((l) => l.id === id);
-    if (!listing) return;
+    // Save current view to restore later
+    const center = map.getCenter();
+    savedViewRef.current = { center: [center.lng, center.lat], zoom: map.getZoom() };
 
-    mapRef.current.easeTo({
-      center: [listing.mine_location.lng, listing.mine_location.lat],
-      duration: 400,
+    // Clear any listing selection
+    clearSelection();
+
+    setSelectedHarbour(harbour);
+
+    // Zoom into the harbour for a berth-level view
+    map.flyTo({
+      center: [harbour.location.lng, harbour.location.lat],
+      zoom: 14,
+      duration: 1500,
+      pitch: 45,
     });
+  }
+
+  function closeHarbourDetail() {
+    const map = mapRef.current;
+    setSelectedHarbour(null);
+
+    // Restore previous view
+    if (map && savedViewRef.current) {
+      map.flyTo({
+        center: savedViewRef.current.center,
+        zoom: savedViewRef.current.zoom,
+        duration: 1200,
+        pitch: 0,
+      });
+      savedViewRef.current = null;
+    }
   }
 
   function clearSelection() {
@@ -611,6 +635,60 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
             {/* Arrow pointing down to route */}
             <div className="flex justify-center">
               <div className="w-2 h-2 bg-gray-950/30 border-r border-b border-white/10 rotate-45 -mt-1 backdrop-blur-xl" />
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Harbour detail panel — zoomed-in view with infrastructure info */}
+      {selectedHarbour && (() => {
+        const info = harbourInfo[selectedHarbour.name];
+        return (
+          <div className="absolute top-24 right-4 z-30 bg-gray-950/20 backdrop-blur-xl border border-white/10 rounded-xl p-4 w-72 shadow-2xl">
+            <button
+              onClick={closeHarbourDetail}
+              className="absolute top-2 right-2 text-gray-400 hover:text-white text-sm w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10"
+            >×</button>
+
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-3 h-3 rounded-sm bg-emerald-500 flex-shrink-0" />
+              <span className="text-sm font-semibold text-white">{selectedHarbour.name}</span>
+              <span className="text-[10px] text-gray-500">{selectedHarbour.country}</span>
+            </div>
+
+            <div className="text-[10px] uppercase text-gray-500 tracking-wider mb-1">
+              {selectedHarbour.type === 'loading' ? 'Loading Port' : 'Destination Port'}
+            </div>
+
+            {info ? (
+              <div className="space-y-2 text-xs">
+                <div>
+                  <span className="text-gray-500">Operator</span>
+                  <p className="text-gray-200">{info.operator}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Capacity</span>
+                  <p className="text-gray-200">{info.capacity}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Berths</span>
+                  <p className="text-gray-200">{info.berths}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Primary Commodities</span>
+                  <p className="text-gray-200">{info.commodities}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Max Draft</span>
+                  <p className="text-gray-200">{info.depth}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">Infrastructure details not available for this port.</p>
+            )}
+
+            <div className="mt-3 pt-2 border-t border-white/5 text-[10px] text-gray-500">
+              Zoomed to berth level · Click × to return
             </div>
           </div>
         );
