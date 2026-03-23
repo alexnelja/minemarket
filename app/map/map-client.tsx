@@ -63,6 +63,8 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
   const mapReadyRef = useRef(false);
   const [hoveredListingId, setHoveredListingId] = useState<string | null>(null);
   const [selectedListing, setSelectedListing] = useState<ListingWithDetails | null>(null);
+  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+  const highlightMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const filteredListings = applyFilters(listings, filters);
 
@@ -386,18 +388,99 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     });
   }
 
+  function clearSelection() {
+    // Remove highlight markers
+    highlightMarkersRef.current.forEach((m) => m.remove());
+    highlightMarkersRef.current = [];
+    // Remove highlight route line
+    const map = mapRef.current;
+    if (map) {
+      if (map.getLayer('highlight-route')) map.removeLayer('highlight-route');
+      if (map.getSource('highlight-route')) map.removeSource('highlight-route');
+    }
+    clearOceanRoute();
+    setSelectedListing(null);
+    setPopupPos(null);
+  }
+
   function handleListingClick(listing: ListingWithDetails) {
-    if (!mapRef.current) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Clear previous selection
+    clearSelection();
 
     setSelectedListing(listing);
 
-    mapRef.current.flyTo({
-      center: [listing.mine_location.lng, listing.mine_location.lat],
-      zoom: 8,
+    // Find the harbour for this listing
+    const harbour = harbours.find((h) => h.id === listing.loading_port_id);
+    const harbourLoc = harbour?.location ?? listing.mine_location;
+    const mineLoc = listing.mine_location;
+
+    // Fit bounds to show both mine and harbour with padding
+    const sw: [number, number] = [
+      Math.min(mineLoc.lng, harbourLoc.lng),
+      Math.min(mineLoc.lat, harbourLoc.lat),
+    ];
+    const ne: [number, number] = [
+      Math.max(mineLoc.lng, harbourLoc.lng),
+      Math.max(mineLoc.lat, harbourLoc.lat),
+    ];
+    map.fitBounds([sw, ne], {
+      padding: { top: 140, bottom: 60, left: panelWidth + 40, right: 80 },
+      maxZoom: 9,
       duration: 1000,
     });
 
-    renderOceanRoute(mapRef.current, listing);
+    // Add highlighted pulsing markers at mine (start) and harbour (end)
+    const startEl = document.createElement('div');
+    startEl.style.cssText = `width:20px;height:20px;border-radius:50%;background:${COMMODITY_CONFIG[listing.commodity_type]?.color ?? '#f59e0b'};border:3px solid white;box-shadow:0 0 12px ${COMMODITY_CONFIG[listing.commodity_type]?.color ?? '#f59e0b'}88;`;
+    const startMarker = new mapboxgl.Marker({ element: startEl })
+      .setLngLat([mineLoc.lng, mineLoc.lat])
+      .addTo(map);
+
+    const endEl = document.createElement('div');
+    endEl.style.cssText = 'width:18px;height:18px;border-radius:3px;background:#10b981;border:3px solid white;box-shadow:0 0 12px #10b98188;';
+    const endMarker = new mapboxgl.Marker({ element: endEl })
+      .setLngLat([harbourLoc.lng, harbourLoc.lat])
+      .addTo(map);
+
+    highlightMarkersRef.current = [startMarker, endMarker];
+
+    // Draw highlighted route line between mine and harbour
+    map.addSource('highlight-route', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [[mineLoc.lng, mineLoc.lat], [harbourLoc.lng, harbourLoc.lat]],
+        },
+        properties: {},
+      },
+    });
+    map.addLayer({
+      id: 'highlight-route',
+      type: 'line',
+      source: 'highlight-route',
+      paint: {
+        'line-color': '#ffffff',
+        'line-width': 3,
+        'line-opacity': 0.8,
+        'line-dasharray': [2, 2],
+      },
+    });
+
+    // Render ocean route
+    renderOceanRoute(map, listing);
+
+    // Position popup at midpoint of mine→harbour after map moves
+    setTimeout(() => {
+      const midLng = (mineLoc.lng + harbourLoc.lng) / 2;
+      const midLat = (mineLoc.lat + harbourLoc.lat) / 2;
+      const point = map.project([midLng, midLat]);
+      setPopupPos({ x: point.x, y: point.y });
+    }, 1100);
   }
 
   const [panelWidth, setPanelWidth] = useState(380);
@@ -469,88 +552,65 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         </div>
       </div>
 
-      {/* Listing detail popup — floating on map when a listing is clicked */}
-      {selectedListing && (() => {
+      {/* Listing popup — positioned above the route midpoint on the map */}
+      {selectedListing && popupPos && (() => {
         const config = COMMODITY_CONFIG[selectedListing.commodity_type];
-        const spec = selectedListing.spec_sheet;
-        const mainSpec = Object.entries(spec).find(([k]) => !k.includes('moisture'));
+        const mainSpec = Object.entries(selectedListing.spec_sheet).find(([k]) => !k.includes('moisture'));
         return (
           <div
-            className="absolute top-24 z-30 bg-gray-950/20 backdrop-blur-xl border border-white/10 rounded-xl p-4 w-72 shadow-2xl"
-            style={{ left: panelWidth + 24 }}
+            className="absolute z-30 pointer-events-auto"
+            style={{ left: popupPos.x, top: popupPos.y, transform: 'translate(-50%, -100%) translateY(-16px)' }}
           >
-            {/* Close button */}
-            <button
-              onClick={() => { setSelectedListing(null); clearOceanRoute(); }}
-              className="absolute top-2 right-2 text-gray-400 hover:text-white text-sm w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10"
-            >
-              ×
-            </button>
+            <div className="bg-gray-950/30 backdrop-blur-xl border border-white/10 rounded-lg px-3 py-2.5 shadow-2xl w-56">
+              {/* Close */}
+              <button
+                onClick={clearSelection}
+                className="absolute -top-2 -right-2 text-gray-400 hover:text-white text-xs w-5 h-5 flex items-center justify-center rounded-full bg-gray-800/80 border border-white/10 hover:bg-gray-700"
+              >×</button>
 
-            {/* Header */}
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: config.color }} />
-              <span className="text-sm font-semibold text-white">
-                {config.label} {mainSpec ? `${mainSpec[1]}%` : ''}
-              </span>
-              {selectedListing.is_verified && (
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">✓ Verified</span>
-              )}
-            </div>
-
-            {/* Route */}
-            <p className="text-xs text-gray-400 mb-3">
-              {selectedListing.mine_name} → {selectedListing.harbour_name}
-            </p>
-
-            {/* Price + Volume */}
-            <div className="flex items-baseline justify-between mb-3">
-              <span className="text-lg font-bold text-amber-400">
-                ${selectedListing.price_per_tonne}/t
-              </span>
-              <span className="text-sm text-gray-400">
-                {selectedListing.volume_tonnes >= 1000
-                  ? `${(selectedListing.volume_tonnes / 1000).toFixed(0)}kt`
-                  : `${selectedListing.volume_tonnes}t`}
-              </span>
-            </div>
-
-            {/* Incoterms */}
-            <div className="flex gap-1.5 mb-3">
-              {selectedListing.incoterms.map((term) => (
-                <span key={term} className="text-[10px] bg-blue-500/15 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded">
-                  {term}
-                </span>
-              ))}
-              <span className="text-[10px] text-gray-500 ml-auto">{selectedListing.currency}</span>
-            </div>
-
-            {/* Spec sheet */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-3 text-xs">
-              {Object.entries(spec).map(([key, val]) => (
-                <div key={key} className="flex justify-between">
-                  <span className="text-gray-500">{key.replace(/_/g, ' ')}</span>
-                  <span className="text-gray-300">{String(val)}</span>
+              {/* Commodity + price row */}
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: config.color }} />
+                  <span className="text-xs font-semibold text-white">
+                    {config.label} {mainSpec ? `${mainSpec[1]}%` : ''}
+                  </span>
+                  {selectedListing.is_verified && (
+                    <span className="text-[9px] text-emerald-400">✓</span>
+                  )}
                 </div>
-              ))}
+                <span className="text-xs font-bold text-amber-400">${selectedListing.price_per_tonne}/t</span>
+              </div>
+
+              {/* Route + volume */}
+              <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1.5">
+                <span>{selectedListing.mine_name} → {selectedListing.harbour_name}</span>
+                <span>{selectedListing.volume_tonnes >= 1000 ? `${(selectedListing.volume_tonnes / 1000).toFixed(0)}kt` : `${selectedListing.volume_tonnes}t`}</span>
+              </div>
+
+              {/* Incoterms */}
+              <div className="flex gap-1 mb-2">
+                {selectedListing.incoterms.map((t) => (
+                  <span key={t} className="text-[9px] bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded">{t}</span>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-1.5">
+                <Link
+                  href={`/marketplace/listings/${selectedListing.id}`}
+                  className="flex-1 text-center text-[10px] bg-white/90 text-black rounded px-2 py-1 font-medium hover:bg-white transition-colors"
+                >
+                  Details
+                </Link>
+                <button className="flex-1 text-center text-[10px] bg-white/10 text-white rounded px-2 py-1 font-medium hover:bg-white/20 transition-colors border border-white/10">
+                  Interest
+                </button>
+              </div>
             </div>
-
-            {/* Seller */}
-            <p className="text-xs text-gray-500 mb-3">
-              Seller: <span className="text-gray-300">{selectedListing.seller_company}</span>
-            </p>
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              <Link
-                href={`/marketplace/listings/${selectedListing.id}`}
-                className="flex-1 text-center text-xs bg-white text-black rounded-lg px-3 py-1.5 font-medium hover:bg-gray-200 transition-colors"
-              >
-                View Details
-              </Link>
-              <button className="flex-1 text-center text-xs bg-white/10 text-white rounded-lg px-3 py-1.5 font-medium hover:bg-white/20 transition-colors border border-white/10">
-                Express Interest
-              </button>
+            {/* Arrow pointing down to route */}
+            <div className="flex justify-center">
+              <div className="w-2 h-2 bg-gray-950/30 border-r border-b border-white/10 rotate-45 -mt-1 backdrop-blur-xl" />
             </div>
           </div>
         );
