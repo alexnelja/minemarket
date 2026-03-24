@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getListingById } from '@/lib/queries';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
+import { ExpressInterestButton } from './express-interest-button';
 
 interface ListingDetailPageProps {
   params: Promise<{ id: string }>;
@@ -123,19 +124,14 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
         </div>
       )}
 
-      {/* Express Interest — Plan 3 placeholder */}
+      {/* Express Interest */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold text-white">Interested in this listing?</h2>
-            <p className="text-xs text-gray-500 mt-1">Deal flow will be enabled in Plan 3.</p>
+            <p className="text-xs text-gray-500 mt-1">Start a deal by expressing interest to the seller.</p>
           </div>
-          <button
-            disabled
-            className="bg-amber-500/40 text-amber-300 text-sm font-semibold px-5 py-2 rounded-lg cursor-not-allowed opacity-60"
-          >
-            Express Interest
-          </button>
+          <ExpressInterestButton listingId={listing.id} />
         </div>
       </div>
     </div>
