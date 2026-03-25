@@ -120,7 +120,8 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
     vessels: true,
   });
   const mineMarkersRef = useRef<mapboxgl.Marker[]>([]);
-  const vesselMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  // Vessel count: only bulk cargo (70-79) and tankers (80-89)
+  const filteredVesselCount = vessels.filter(v => v.lat && v.lng && ((v.ship_type >= 70 && v.ship_type < 80) || (v.ship_type >= 80 && v.ship_type < 90))).length;
   const harbourMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const corridorSourcesRef = useRef<string[]>([]);
   const savedViewRef = useRef<{ center: [number, number]; zoom: number; pitch: number } | null>(null);
@@ -408,53 +409,119 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
           el.style.height = `${portSize}px`;
         });
 
-        // Vessels: tiny at low zoom, visible at high zoom
-        const vesselSize = Math.max(2, Math.min(10, zoom * 0.8));
-        vesselMarkersRef.current.forEach(m => {
-          const el = m.getElement();
-          el.style.width = `${vesselSize}px`;
-          el.style.height = `${vesselSize}px`;
-        });
+        // Vessels use Mapbox GeoJSON layers — zoom scaling handled natively
       }
 
       map.on('zoom', updateMarkerSizes);
       // Initial sizing
       updateMarkerSizes();
 
-      // --- Vessel markers (live AIS) ---
-      for (const vessel of vessels) {
-        if (!vessel.lat || !vessel.lng) continue;
-        // Ship type: 70-79 = cargo, 80-89 = tanker
-        const isBulk = vessel.ship_type >= 70 && vessel.ship_type < 80;
-        const isTanker = vessel.ship_type >= 80 && vessel.ship_type < 90;
-        const color = isBulk ? '#f59e0b' : isTanker ? '#60a5fa' : '#6b7280';
+      // --- Vessel layers (GeoJSON, viewport-filtered by Mapbox) ---
+      const vesselFeatures: GeoJSON.Feature[] = vessels
+        .filter(v => v.lat && v.lng && ((v.ship_type >= 70 && v.ship_type < 80) || (v.ship_type >= 80 && v.ship_type < 90)))
+        .map(v => ({
+          type: 'Feature' as const,
+          geometry: { type: 'Point' as const, coordinates: [v.lng, v.lat] },
+          properties: {
+            mmsi: v.mmsi,
+            name: v.name || 'Unknown',
+            speed: v.speed || 0,
+            course: v.course || 0,
+            heading: v.heading || v.course || 0,
+            ship_type: v.ship_type,
+            destination: v.destination || '',
+            isMoving: (v.speed || 0) > 0.5,
+            isBulk: v.ship_type >= 70 && v.ship_type < 80,
+            color: (v.ship_type >= 70 && v.ship_type < 80) ? '#f59e0b' : '#60a5fa',
+          },
+        }));
 
-        const el = document.createElement('div');
-        el.style.width = '5px';
-        el.style.height = '5px';
-        el.style.borderRadius = '50%';
-        el.style.backgroundColor = color;
-        el.style.opacity = '0.7';
-        el.style.cursor = 'pointer';
-        el.className = 'vessel-marker';
+      map.addSource('vessels', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: vesselFeatures },
+      });
 
-        const popup = new mapboxgl.Popup({ offset: 8, closeButton: false })
-          .setHTML(`
-            <div style="font-family:sans-serif;padding:2px;">
-              <div style="font-weight:600;font-size:12px;color:#f9fafb;">${vessel.name || 'Unknown'}</div>
-              <div style="font-size:11px;color:#9ca3af;">MMSI: ${vessel.mmsi}</div>
-              <div style="font-size:11px;color:#9ca3af;">${vessel.speed?.toFixed(1) ?? 0} kn · ${vessel.course?.toFixed(0) ?? 0}°</div>
-              ${vessel.destination ? `<div style="font-size:11px;color:#60a5fa;">→ ${vessel.destination}</div>` : ''}
-            </div>
-          `);
+      // Layer 1: Stationary vessels — circles
+      map.addLayer({
+        id: 'vessels-stationary',
+        type: 'circle',
+        source: 'vessels',
+        filter: ['!', ['get', 'isMoving']],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 2, 7, 4, 12, 8],
+          'circle-color': ['get', 'color'],
+          'circle-opacity': 0.6,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#0f172a',
+        },
+      });
 
-        const marker = new mapboxgl.Marker({ element: el })
-          .setLngLat([vessel.lng, vessel.lat])
-          .setPopup(popup)
-          .addTo(map);
+      // Layer 2: Moving vessels — directional triangles using symbol layer
+      // Create a triangle image programmatically
+      const triangleSize = 24;
+      const triangleImage: {width: number; height: number; data: Uint8Array} = {
+        width: triangleSize, height: triangleSize,
+        data: new Uint8Array(triangleSize * triangleSize * 4),
+      };
+      for (let y = 0; y < triangleSize; y++) {
+        for (let x = 0; x < triangleSize; x++) {
+          const cx = triangleSize / 2;
+          const progress = y / triangleSize;
+          const halfWidth = progress * (triangleSize / 2 - 2);
+          if (x >= cx - halfWidth && x <= cx + halfWidth && y >= 2) {
+            const idx = (y * triangleSize + x) * 4;
+            triangleImage.data[idx] = 255;
+            triangleImage.data[idx + 1] = 255;
+            triangleImage.data[idx + 2] = 255;
+            triangleImage.data[idx + 3] = 220;
+          }
+        }
+      }
+      map.addImage('vessel-triangle', triangleImage, { sdf: true });
 
-        vesselMarkersRef.current.push(marker);
-        markersRef.current.push(marker);
+      map.addLayer({
+        id: 'vessels-moving',
+        type: 'symbol',
+        source: 'vessels',
+        filter: ['get', 'isMoving'],
+        layout: {
+          'icon-image': 'vessel-triangle',
+          'icon-size': [
+            'interpolate', ['linear'], ['zoom'],
+            3, ['interpolate', ['linear'], ['get', 'speed'], 0, 0.3, 15, 0.6],
+            7, ['interpolate', ['linear'], ['get', 'speed'], 0, 0.5, 15, 1.0],
+            12, ['interpolate', ['linear'], ['get', 'speed'], 0, 0.8, 15, 1.5],
+          ],
+          'icon-rotate': ['get', 'course'],
+          'icon-rotation-alignment': 'map',
+          'icon-allow-overlap': true,
+        },
+        paint: {
+          'icon-color': ['get', 'color'],
+          'icon-opacity': 0.8,
+        },
+      });
+
+      // Click handler for vessel layers
+      for (const layerId of ['vessels-stationary', 'vessels-moving'] as const) {
+        map.on('click', layerId, (e) => {
+          if (!e.features?.[0]) return;
+          const props = e.features[0].properties;
+          const coords = (e.features[0].geometry as GeoJSON.Point).coordinates;
+          new mapboxgl.Popup({ offset: 10, closeButton: false })
+            .setLngLat(coords as [number, number])
+            .setHTML(`
+              <div style="font-family:sans-serif;padding:2px;">
+                <div style="font-weight:600;font-size:12px;color:#f9fafb;">${props?.name}</div>
+                <div style="font-size:11px;color:#9ca3af;">MMSI: ${props?.mmsi}</div>
+                <div style="font-size:11px;color:#9ca3af;">${Number(props?.speed).toFixed(1)} kn · ${Number(props?.course).toFixed(0)}°</div>
+                ${props?.destination ? `<div style="font-size:11px;color:#60a5fa;">&rarr; ${props.destination}</div>` : ''}
+              </div>
+            `)
+            .addTo(map);
+        });
+        map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
       }
 
       // --- Fetch road routes from Mapbox Directions API ---
@@ -793,9 +860,11 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
       map.setLayoutProperty('ocean-routes-layer', 'visibility', layers.ocean ? 'visible' : 'none');
     }
 
-    // Toggle vessels
-    vesselMarkersRef.current.forEach(m => {
-      m.getElement().style.display = layers.vessels ? '' : 'none';
+    // Toggle vessels — Mapbox layers instead of DOM markers
+    ['vessels-stationary', 'vessels-moving'].forEach(id => {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, 'visibility', layers.vessels ? 'visible' : 'none');
+      }
     });
   }, [layers]);
 
@@ -943,7 +1012,7 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
           { key: 'corridors', label: 'Rail Corridors', color: '#f87171' },
           { key: 'roads', label: 'Road Routes', color: '#6b7280' },
           { key: 'ocean', label: 'Ocean Routes', color: '#60a5fa' },
-          { key: 'vessels', label: `Vessels (${vessels.length})`, color: '#a78bfa' },
+          { key: 'vessels', label: `Vessels (${filteredVesselCount})`, color: '#a78bfa' },
         ].map(({ key, label, color }) => (
           <label key={key} className="flex items-center gap-2 cursor-pointer text-xs">
             <input
@@ -1209,6 +1278,20 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
             <div className="flex items-center gap-2 text-gray-300">
               <span className="flex-none w-5 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 7px)' }} />
               Ocean freight
+            </div>
+          </div>
+          <div className="pt-1 border-t border-gray-700/50 space-y-1.5">
+            <div className="flex items-center gap-2 text-gray-300">
+              <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #f59e0b' }} />
+              Bulk carrier (moving)
+            </div>
+            <div className="flex items-center gap-2 text-gray-300">
+              <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #60a5fa' }} />
+              Tanker (moving)
+            </div>
+            <div className="flex items-center gap-2 text-gray-300">
+              <span className="w-2.5 h-2.5 rounded-full flex-none border border-gray-600" style={{ backgroundColor: '#9ca3af' }} />
+              At anchor
             </div>
           </div>
       </div>
