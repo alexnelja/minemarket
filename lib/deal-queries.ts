@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from './supabase-server';
+import { createServerSupabaseClient, createAdminSupabaseClient } from './supabase-server';
 import type {
   Deal, DealMilestone, DealDocument, Rating, CommodityType,
 } from './types';
@@ -28,13 +28,14 @@ export async function getDealsByUser(userId: string): Promise<DealWithDetails[]>
 
   if (error || !data) return [];
 
-  // Fetch all counterparty IDs in one query
+  // Fetch counterparty names using admin client (bypasses RLS on users table)
   const counterpartyIds = data.map((d: Record<string, unknown>) =>
     d.buyer_id === userId ? d.seller_id : d.buyer_id
   ) as string[];
   const uniqueIds = [...new Set(counterpartyIds)];
 
-  const { data: users } = await supabase
+  const admin = createAdminSupabaseClient();
+  const { data: users } = await admin
     .from('users')
     .select('id, company_name')
     .in('id', uniqueIds);
@@ -78,7 +79,8 @@ export async function getDealById(dealId: string, userId: string): Promise<DealW
   if (data.buyer_id !== userId && data.seller_id !== userId) return null;
 
   const counterpartyId = data.buyer_id === userId ? data.seller_id : data.buyer_id;
-  const { data: counterparty } = await supabase
+  const admin = createAdminSupabaseClient();
+  const { data: counterparty } = await admin
     .from('users')
     .select('company_name')
     .eq('id', counterpartyId)

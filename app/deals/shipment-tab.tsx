@@ -155,9 +155,9 @@ export function ShipmentTab({ deals, milestonesMap, harbourLocations, mineLocati
   }, [selectedDealId, transitDeals, harbourLocations]);
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] -mx-6 md:-mx-10">
-      {/* Map */}
-      <div className="flex-1 relative">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-12rem)] -mx-6 md:-mx-10">
+      {/* Map — hidden on mobile, shown on md+ */}
+      <div className="hidden md:block flex-1 relative">
         <div ref={mapContainer} className="absolute inset-0" />
         {transitDeals.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -166,8 +166,8 @@ export function ShipmentTab({ deals, milestonesMap, harbourLocations, mineLocati
         )}
       </div>
 
-      {/* Sidebar */}
-      <div className="w-72 border-l border-gray-800 bg-gray-950 overflow-y-auto p-3 space-y-2">
+      {/* Sidebar — full width on mobile, fixed width on desktop */}
+      <div className="w-full md:w-72 md:border-l border-gray-800 bg-gray-950 overflow-y-auto p-3 space-y-2">
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">
           Active Shipments ({transitDeals.length})
         </h3>
