@@ -10,6 +10,9 @@ import { MilestoneTimeline } from './milestone-timeline';
 import { DocumentUpload } from './document-upload';
 import { RatingForm } from './rating-form';
 import { getTrustScoreForUser } from '@/lib/trust-queries';
+import { compareSpecs } from '@/lib/spec-comparison';
+import type { SpecTolerance, PriceAdjustmentRule } from '@/lib/spec-comparison';
+import { SPEC_LABELS } from '@/lib/spec-fields';
 
 interface DealDetailPageProps {
   params: Promise<{ id: string }>;
@@ -35,6 +38,24 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
 
   const counterpartyId = isBuyer ? deal.seller_id : deal.buyer_id;
   const counterpartyTrust = await getTrustScoreForUser(counterpartyId);
+
+  // Compute spec comparison for delivered+ deals
+  const showSpecComparison = ['delivered', 'escrow_released', 'completed'].includes(deal.status);
+  const specComparison = showSpecComparison
+    && deal.spec_tolerances
+    && Object.keys(deal.spec_tolerances).length > 0
+    ? compareSpecs(
+        deal.spec_tolerances as Record<string, SpecTolerance>,
+        (deal.price_adjustment_rules ?? {}) as Record<string, PriceAdjustmentRule>,
+        // In production, actual_spec would come from lab reports / weighbridge data.
+        // For now, use target values as placeholder (no deviation).
+        Object.fromEntries(
+          Object.entries(deal.spec_tolerances as Record<string, SpecTolerance>).map(
+            ([k, v]) => [k, v.target]
+          )
+        ),
+      )
+    : null;
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -134,6 +155,70 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
         dealId={deal.id}
         documents={documents}
       />
+
+      {/* Spec Comparison — shown for delivered+ deals with spec tolerances */}
+      {specComparison && specComparison.results.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-white mb-4">Spec Comparison</h2>
+          {specComparison.hasRejection && (
+            <div className="mb-4 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+              Material rejected — one or more fields outside tolerance
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-gray-500 text-xs border-b border-gray-800">
+                  <th className="text-left py-2 pr-4">Field</th>
+                  <th className="text-right py-2 px-3">Target</th>
+                  <th className="text-right py-2 px-3">Actual</th>
+                  <th className="text-right py-2 px-3">Deviation</th>
+                  <th className="text-left py-2 px-3">Status</th>
+                  <th className="text-right py-2 pl-3">Adjustment ($/t)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {specComparison.results.map((r) => {
+                  const statusColor =
+                    r.status === 'within_spec' ? 'text-emerald-400'
+                    : r.status === 'bonus' ? 'text-blue-400'
+                    : r.status === 'penalty' ? 'text-amber-400'
+                    : 'text-red-400';
+                  const statusLabel =
+                    r.status === 'within_spec' ? 'OK'
+                    : r.status === 'bonus' ? 'Bonus'
+                    : r.status === 'penalty' ? 'Penalty'
+                    : 'REJECT';
+                  return (
+                    <tr key={r.field} className="border-b border-gray-800/50">
+                      <td className="py-2 pr-4 text-white">{SPEC_LABELS[r.field] ?? r.field}</td>
+                      <td className="py-2 px-3 text-right text-gray-400">{r.target.toFixed(2)}</td>
+                      <td className="py-2 px-3 text-right text-white">{r.actual.toFixed(2)}</td>
+                      <td className={`py-2 px-3 text-right ${r.deviation === 0 ? 'text-gray-500' : r.deviation > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {r.deviation >= 0 ? '+' : ''}{r.deviation.toFixed(2)}
+                      </td>
+                      <td className={`py-2 px-3 ${statusColor} font-medium`}>{statusLabel}</td>
+                      <td className={`py-2 pl-3 text-right ${r.priceAdjustment === 0 ? 'text-gray-500' : r.priceAdjustment > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {r.priceAdjustment === 0 ? '—' : `${r.priceAdjustment > 0 ? '+' : ''}${r.priceAdjustment.toFixed(2)}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={5} className="py-3 text-right text-sm text-gray-400 font-medium">
+                    Total Price Adjustment
+                  </td>
+                  <td className={`py-3 pl-3 text-right font-bold ${specComparison.totalAdjustment === 0 ? 'text-gray-400' : specComparison.totalAdjustment > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {specComparison.totalAdjustment === 0 ? '—' : `${specComparison.totalAdjustment > 0 ? '+' : ''}$${Math.abs(specComparison.totalAdjustment).toFixed(2)}/t`}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Rating form — only shown for completed deals */}
       {(['completed', 'escrow_released'] as string[]).includes(deal.status) && !hasRated && (

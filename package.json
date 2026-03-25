@@ -14,7 +14,8 @@
     "collect:vessels": "node scripts/collect-vessels.js --duration=30",
     "enrich:mines": "node scripts/enrich-mines-fineprint.js",
     "ingest:rails": "node scripts/ingest-africa-rails.js",
-    "ingest:prices": "node scripts/ingest-commodity-prices.js"
+    "ingest:prices": "node scripts/ingest-commodity-prices.js",
+    "calculate:congestion": "node scripts/calculate-congestion.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",

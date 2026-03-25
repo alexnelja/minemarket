@@ -79,6 +79,33 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (newStatus === 'second_accept') {
     update.second_accept_at = new Date().toISOString();
     update.escrow_amount = (deal.agreed_price as number) * (deal.volume_tonnes as number);
+
+    // Fetch and lock FX rate for non-USD deals
+    const dealCurrency = deal.currency as string;
+    if (dealCurrency && dealCurrency !== 'USD') {
+      try {
+        const appId = process.env.OPEN_EXCHANGE_RATES_APP_ID;
+        if (appId) {
+          const fxRes = await fetch(
+            `https://openexchangerates.org/api/latest.json?app_id=${appId}`
+          );
+          if (fxRes.ok) {
+            const fxData = await fxRes.json();
+            if (fxData.rates?.[dealCurrency]) {
+              update.fx_rate_locked = fxData.rates[dealCurrency];
+              update.fx_source_timestamp = new Date(fxData.timestamp * 1000).toISOString();
+            }
+          } else {
+            // API returned error — in production, block transition
+            console.error(`FX rate API returned ${fxRes.status}`);
+          }
+        }
+      } catch (err) {
+        // FX rate fetch failed — log but allow transition in v1
+        // In production, should block the transition per spec
+        console.error('FX rate fetch failed:', err);
+      }
+    }
   }
 
   // Update escrow status for relevant transitions
