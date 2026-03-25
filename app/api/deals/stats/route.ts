@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getTradingStats } from '@/lib/deal-queries';
 import type { CommodityType } from '@/lib/types';
 
-const VALID_COMMODITIES: CommodityType[] = ['chrome', 'manganese', 'iron_ore', 'coal', 'aggregates'];
+const VALID_COMMODITIES: CommodityType[] = ['chrome', 'manganese', 'iron_ore', 'coal', 'aggregates', 'platinum', 'gold', 'copper', 'vanadium', 'titanium'];
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

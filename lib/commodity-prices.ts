@@ -25,7 +25,7 @@ export async function getLatestPrices(): Promise<Record<string, CommodityPrice>>
   const supabase = await createServerSupabaseClient();
 
   // Fetch the most recent price for each commodity
-  const commodities: CommodityType[] = ['chrome', 'manganese', 'iron_ore', 'coal', 'aggregates'];
+  const commodities: CommodityType[] = ['chrome', 'manganese', 'iron_ore', 'coal', 'aggregates', 'platinum', 'gold', 'copper', 'vanadium', 'titanium'];
   const result: Record<string, CommodityPrice> = {};
 
   // Single query: get recent prices ordered by recorded_at desc

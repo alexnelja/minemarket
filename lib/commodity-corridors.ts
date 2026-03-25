@@ -3,10 +3,12 @@
  * Each corridor represents a specific commodity flow from source region to port.
  */
 
+import type { CommodityType } from './types';
+
 export interface CommodityCorridor {
   id: string;
   name: string;
-  commodity: 'chrome' | 'manganese' | 'iron_ore' | 'coal' | 'aggregates';
+  commodity: CommodityType;
   mode: 'road' | 'rail';
   source: string;        // Region/mine cluster name
   destination: string;   // Port name

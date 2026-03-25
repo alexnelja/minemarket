@@ -1,7 +1,7 @@
 // Core enums as TypeScript types
 export type UserRole = 'buyer' | 'seller' | 'both';
 export type KycStatus = 'pending' | 'verified' | 'rejected';
-export type CommodityType = 'chrome' | 'manganese' | 'iron_ore' | 'coal' | 'aggregates';
+export type CommodityType = 'chrome' | 'manganese' | 'iron_ore' | 'coal' | 'aggregates' | 'platinum' | 'gold' | 'copper' | 'vanadium' | 'titanium';
 export type HarbourType = 'loading' | 'destination' | 'both';
 export type TransportMode = 'road' | 'rail' | 'combined';
 export type ListingStatus = 'active' | 'paused' | 'sold' | 'expired';
@@ -14,7 +14,7 @@ export type DealStatus =
 export type EscrowStatus = 'pending_deposit' | 'held' | 'releasing' | 'released' | 'frozen';
 export type CurrencyType = 'USD' | 'ZAR' | 'EUR';
 export type MilestoneType = 'loaded' | 'departed_port' | 'in_transit' | 'arrived_port' | 'customs' | 'delivered';
-export type DocType = 'bill_of_lading' | 'certificate_of_origin' | 'weighbridge_ticket' | 'lab_report' | 'customs_declaration' | 'invoice';
+export type DocType = 'bill_of_lading' | 'certificate_of_origin' | 'weighbridge_ticket' | 'lab_report' | 'customs_declaration' | 'invoice' | 'lbma_certificate' | 'lme_warrant' | 'assay_certificate' | 'draft_survey' | 'phytosanitary_certificate';
 export type BadgeLevel = 'standard' | 'premium';
 
 // Database row types
@@ -184,4 +184,24 @@ export const COMMODITY_CONFIG: Record<CommodityType, { label: string; color: str
   iron_ore: { label: 'Iron Ore', color: '#60a5fa' },
   coal: { label: 'Coal', color: '#6b7280' },
   aggregates: { label: 'Aggregates', color: '#f97316' },
+  platinum: { label: 'Platinum (PGMs)', color: '#c0c0c0' },
+  gold: { label: 'Gold', color: '#FFD700' },
+  copper: { label: 'Copper', color: '#b87333' },
+  vanadium: { label: 'Vanadium', color: '#8b5cf6' },
+  titanium: { label: 'Titanium', color: '#06b6d4' },
+};
+
+export type PricingUnit = 'per_tonne' | 'per_troy_oz' | 'per_lb' | 'per_dmtu';
+
+export const COMMODITY_PRICING: Record<CommodityType, { unit: PricingUnit; label: string; index: string }> = {
+  chrome: { unit: 'per_tonne', label: '$/t', index: 'Fastmarkets Chrome' },
+  manganese: { unit: 'per_dmtu', label: '$/dmtu', index: 'Metal Bulletin Mn' },
+  iron_ore: { unit: 'per_tonne', label: '$/t CFR', index: 'Platts IODEX 62%' },
+  coal: { unit: 'per_tonne', label: '$/t FOB', index: 'API4 Richards Bay' },
+  aggregates: { unit: 'per_tonne', label: '$/t', index: 'Local spot' },
+  platinum: { unit: 'per_troy_oz', label: '$/oz', index: 'LPPM Fix' },
+  gold: { unit: 'per_troy_oz', label: '$/oz', index: 'LBMA Gold Price' },
+  copper: { unit: 'per_tonne', label: '$/t', index: 'LME Grade A' },
+  vanadium: { unit: 'per_lb', label: '$/lb', index: 'Metal Bulletin V\u2082O\u2085' },
+  titanium: { unit: 'per_tonne', label: '$/t', index: 'Fastmarkets TiO\u2082' },
 };

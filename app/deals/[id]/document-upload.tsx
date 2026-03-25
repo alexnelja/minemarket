@@ -12,6 +12,11 @@ const DOC_TYPE_LABELS: Record<DocType, string> = {
   lab_report: 'Lab Report',
   customs_declaration: 'Customs Declaration',
   invoice: 'Invoice',
+  lbma_certificate: 'LBMA Certificate',
+  lme_warrant: 'LME Warrant',
+  assay_certificate: 'Assay Certificate',
+  draft_survey: 'Draft Survey',
+  phytosanitary_certificate: 'Phytosanitary Certificate',
 };
 
 interface DocumentUploadProps {

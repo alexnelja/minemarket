@@ -32,6 +32,15 @@ const COMMODITY_MAP = {
   'sand': 'aggregates',
   'gravel': 'aggregates',
   'sand and gravel': 'aggregates',
+  'platinum': 'platinum',
+  'gold': 'gold',
+  'copper': 'copper',
+  'vanadium': 'vanadium',
+  'titanium': 'titanium',
+  'ilmenite': 'titanium',
+  'rutile': 'titanium',
+  'mineral sands': 'titanium',
+  'heavy mineral sands': 'titanium',
 };
 
 function mapCommodity(raw) {

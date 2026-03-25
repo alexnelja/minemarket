@@ -12,7 +12,7 @@ export function CommodityTabSwitcher({ activeCommodity }: CommodityTabSwitcherPr
   const router = useRouter();
 
   return (
-    <div className="flex gap-1 bg-gray-900 rounded-lg p-1 w-fit">
+    <div className="flex flex-wrap gap-1 bg-gray-900 rounded-lg p-1 w-fit">
       {(Object.entries(COMMODITY_CONFIG) as [CommodityType, { label: string; color: string }][]).map(
         ([type, config]) => (
           <button
