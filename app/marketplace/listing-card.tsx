@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
+import { CommodityDot } from '@/app/components/commodity-dot';
 import type { Listing } from '@/lib/types';
 
 interface ListingCardProps {
@@ -16,10 +17,7 @@ export function ListingCard({ listing }: ListingCardProps) {
         {/* Header row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span
-              className="w-3 h-3 rounded-full flex-shrink-0"
-              style={{ backgroundColor: config.color }}
-            />
+            <CommodityDot commodity={listing.commodity_type} size="lg" />
             <span className="text-sm font-semibold text-white">{config.label}</span>
           </div>
           {listing.is_verified && (

@@ -1,5 +1,6 @@
 import { COMMODITY_CONFIG } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
+import { CommodityDot } from '@/app/components/commodity-dot';
 import type { Requirement } from '@/lib/types';
 
 interface RequirementCardProps {
@@ -13,10 +14,7 @@ export function RequirementCard({ requirement }: RequirementCardProps) {
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors h-full flex flex-col gap-3">
       {/* Header row */}
       <div className="flex items-center gap-2">
-        <span
-          className="w-3 h-3 rounded-full flex-shrink-0"
-          style={{ backgroundColor: config.color }}
-        />
+        <CommodityDot commodity={requirement.commodity_type} size="lg" />
         <span className="text-sm font-semibold text-white">{config.label}</span>
         <span className="text-xs text-gray-400 ml-1">wanted</span>
       </div>

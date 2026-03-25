@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { COMMODITY_CONFIG } from '@/lib/types';
-import { DEAL_STATUS_LABELS, DEAL_STATUS_COLORS } from '@/lib/deal-helpers';
 import { formatCurrency, timeAgo } from '@/lib/format';
+import { CommodityDot } from '@/app/components/commodity-dot';
+import { StatusBadge } from '@/app/components/status-badge';
 import type { DealWithDetails } from '@/lib/deal-queries';
 
 interface PipelineCardProps {
@@ -10,7 +11,6 @@ interface PipelineCardProps {
 
 export function PipelineCard({ deal }: PipelineCardProps) {
   const config = COMMODITY_CONFIG[deal.commodity_type];
-  const statusColors = DEAL_STATUS_COLORS[deal.status];
 
   return (
     <Link
@@ -18,10 +18,10 @@ export function PipelineCard({ deal }: PipelineCardProps) {
       className="block bg-gray-950 border border-gray-800 rounded-lg p-3 hover:border-gray-700 transition-colors"
     >
       <div className="flex items-center gap-2 mb-2">
-        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: config.color }} />
+        <CommodityDot commodity={deal.commodity_type} size="sm" />
         <span className="text-xs font-medium text-white">{config.label}</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ml-auto ${statusColors.bg} ${statusColors.text} ${statusColors.border}`}>
-          {DEAL_STATUS_LABELS[deal.status]}
+        <span className="ml-auto">
+          <StatusBadge status={deal.status} />
         </span>
       </div>
       <div className="text-xs text-gray-400">{deal.counterparty_name}</div>

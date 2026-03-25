@@ -2,10 +2,11 @@ import Link from 'next/link';
 import { requireAuth } from '@/lib/auth';
 import { getUserListings, getUserRequirements } from '@/lib/queries';
 import { getDealsByUser } from '@/lib/deal-queries';
-import { DEAL_STATUS_LABELS, DEAL_STATUS_COLORS } from '@/lib/deal-helpers';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import { timeAgo, formatCurrency } from '@/lib/format';
 import { getTrustScoreForUser } from '@/lib/trust-queries';
+import { CommodityDot } from '@/app/components/commodity-dot';
+import { StatusBadge } from '@/app/components/status-badge';
 
 export default async function DashboardPage() {
   const user = await requireAuth();
@@ -107,10 +108,7 @@ export default async function DashboardPage() {
                   href={`/marketplace/listings/${listing.id}`}
                   className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-800/50 transition-colors"
                 >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: cfg.color }}
-                  />
+                  <CommodityDot commodity={listing.commodity_type} />
                   <span className="text-sm text-white w-28 flex-shrink-0">{cfg.label}</span>
                   <span className="text-sm text-gray-400 flex-1">
                     {listing.volume_tonnes.toLocaleString()} t
@@ -162,10 +160,7 @@ export default async function DashboardPage() {
                   key={req.id}
                   className="flex items-center gap-4 px-5 py-3.5"
                 >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: cfg.color }}
-                  />
+                  <CommodityDot commodity={req.commodity_type} />
                   <span className="text-sm text-white w-28 flex-shrink-0">{cfg.label}</span>
                   <span className="text-sm text-gray-400 flex-1">
                     {req.volume_needed.toLocaleString()} t
@@ -215,17 +210,13 @@ export default async function DashboardPage() {
           <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-x-auto overflow-hidden divide-y divide-gray-800">
             {activeDeals.map((deal) => {
               const cfg = COMMODITY_CONFIG[deal.commodity_type];
-              const statusColors = DEAL_STATUS_COLORS[deal.status];
               return (
                 <Link
                   key={deal.id}
                   href={`/deals/${deal.id}`}
                   className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-800/50 transition-colors"
                 >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: cfg.color }}
-                  />
+                  <CommodityDot commodity={deal.commodity_type} />
                   <span className="text-sm text-white w-28 flex-shrink-0">{cfg.label}</span>
                   <span className="text-sm text-gray-400 flex-1">
                     {deal.counterparty_name}
@@ -233,9 +224,7 @@ export default async function DashboardPage() {
                   <span className="text-sm text-amber-400 font-medium">
                     {formatCurrency(deal.agreed_price, deal.currency)}/t
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full border ml-2 ${statusColors.bg} ${statusColors.text} ${statusColors.border}`}>
-                    {DEAL_STATUS_LABELS[deal.status]}
-                  </span>
+                  <StatusBadge status={deal.status} size="md" />
                   <span className="text-xs text-gray-600 ml-2 w-16 text-right flex-shrink-0">
                     {timeAgo(deal.created_at)}
                   </span>

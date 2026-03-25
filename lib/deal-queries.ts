@@ -7,7 +7,6 @@ import { PAGINATION } from './constants';
 // Extended deal with joined counterparty and listing info
 export interface DealWithDetails extends Deal {
   counterparty_name: string;
-  listing_commodity_label: string;
   mine_name: string;
   harbour_name: string;
 }
@@ -52,7 +51,6 @@ export async function getDealsByUser(userId: string): Promise<DealWithDetails[]>
     return {
       ...d,
       counterparty_name: userMap.get(counterpartyId) ?? 'Unknown',
-      listing_commodity_label: '',
       mine_name: (mine?.name as string) ?? 'Unknown',
       harbour_name: (harbour?.name as string) ?? 'Unknown',
     } as DealWithDetails;
@@ -94,7 +92,6 @@ export async function getDealById(dealId: string, userId: string): Promise<DealW
   return {
     ...data,
     counterparty_name: counterparty?.company_name ?? 'Unknown',
-    listing_commodity_label: '',
     mine_name: (mine?.name as string) ?? 'Unknown',
     harbour_name: (harbour?.name as string) ?? 'Unknown',
   } as DealWithDetails;

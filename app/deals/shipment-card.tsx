@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import { MILESTONE_ORDER, DEAL_STATUS_LABELS } from '@/lib/deal-helpers';
 import { formatCurrency } from '@/lib/format';
+import { CommodityDot } from '@/app/components/commodity-dot';
 import type { DealWithDetails } from '@/lib/deal-queries';
 import type { DealMilestone, MilestoneType } from '@/lib/types';
 
@@ -26,7 +27,7 @@ export function ShipmentCard({ deal, milestones, isSelected, onSelect }: Shipmen
       }`}
     >
       <div className="flex items-center gap-2 mb-2">
-        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: config.color }} />
+        <CommodityDot commodity={deal.commodity_type} size="sm" />
         <span className="text-xs font-medium text-white">{config.label}</span>
         <span className="text-xs text-gray-500 ml-auto">{DEAL_STATUS_LABELS[deal.status]}</span>
       </div>

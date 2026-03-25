@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
+import { unauthorized, badRequest, notFound, forbidden, conflict, serverError } from '@/lib/api-helpers';
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!user) return unauthorized();
 
   const body = await request.json();
   const { listing_id } = body;
 
   if (!listing_id) {
-    return NextResponse.json({ error: 'listing_id is required' }, { status: 400 });
+    return badRequest('listing_id is required');
   }
 
   // Fetch the listing
@@ -22,19 +23,19 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (listingError || !listing) {
-    return NextResponse.json({ error: 'Listing not found or not active' }, { status: 404 });
+    return notFound('Listing not found or not active');
   }
 
   // Cannot express interest in your own listing
   if (listing.seller_id === user.id) {
-    return NextResponse.json({ error: 'Cannot express interest in your own listing' }, { status: 400 });
+    return badRequest('Cannot express interest in your own listing');
   }
 
   // Enforce allocation mode
   if (listing.allocation_mode === 'invite_only') {
     const preferredIds: string[] = listing.preferred_buyer_ids ?? [];
     if (!preferredIds.includes(user.id)) {
-      return NextResponse.json({ error: 'This listing is invite-only' }, { status: 403 });
+      return forbidden('This listing is invite-only');
     }
   }
 
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
       .not('status', 'in', '("cancelled")');
 
     if ((count ?? 0) >= listing.max_buyers) {
-      return NextResponse.json({ error: 'This listing has reached its maximum number of buyers' }, { status: 400 });
+      return badRequest('This listing has reached its maximum number of buyers');
     }
   }
 
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
     .limit(1);
 
   if (existing && existing.length > 0) {
-    return NextResponse.json({ error: 'You already have an active deal on this listing', existing_deal_id: existing[0].id }, { status: 409 });
+    return conflict('You already have an active deal on this listing', { existing_deal_id: existing[0].id });
   }
 
   // Create the deal
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (dealError) {
-    return NextResponse.json({ error: dealError.message }, { status: 500 });
+    return serverError(dealError);
   }
 
   return NextResponse.json(deal, { status: 201 });

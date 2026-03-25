@@ -31,3 +31,20 @@ export const PAGINATION = {
   COMPLETED_DEALS_LIMIT: 50,
   RECENT_DEALS_DAYS: 30,
 } as const;
+
+// Deal status filter groups
+export const DEAL_STATUS_FILTERS = {
+  COMPLETED: ['completed', 'escrow_released'] as const,
+  ACTIVE: ['interest', 'first_accept', 'negotiation', 'second_accept', 'escrow_held', 'loading', 'in_transit', 'delivered'] as const,
+  IN_TRANSIT: ['loading', 'in_transit', 'delivered'] as const,
+  SETTLED: ['completed', 'escrow_released', 'delivered', 'in_transit', 'loading', 'escrow_held'] as const,
+  TERMINAL: ['completed', 'cancelled'] as const,
+} as const;
+
+export const QUERY_LIMITS = {
+  VESSEL_POSITIONS: 1000,
+  VESSEL_POSITIONS_MAX: 2000,
+  PORT_CONGESTION: 50,
+  INTELLIGENCE_TOP_N: 10,
+  TABLE_DISPLAY_ROWS: 10,
+} as const;
