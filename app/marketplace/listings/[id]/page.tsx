@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getListingById } from '@/lib/queries';
+import { getSellerTrustScore, getListingVerifications } from '@/lib/trust-queries';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 import { ExpressInterestButton } from './express-interest-button';
@@ -33,6 +34,11 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
   if (!listing) {
     notFound();
   }
+
+  const [sellerTrust, verifications] = await Promise.all([
+    getSellerTrustScore(listing.seller_id),
+    getListingVerifications(listing.id),
+  ]);
 
   const config = COMMODITY_CONFIG[listing.commodity_type];
 
@@ -68,6 +74,14 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
                 )}
               </div>
               <p className="text-gray-400 text-sm mt-0.5">{listing.seller_company}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${sellerTrust.badge.bg} ${sellerTrust.badge.color} ${sellerTrust.badge.border}`}>
+                  {sellerTrust.badge.label}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {sellerTrust.overall.toFixed(1)}/5 ({sellerTrust.ratingCount} rating{sellerTrust.ratingCount !== 1 ? 's' : ''})
+                </span>
+              </div>
             </div>
           </div>
           <div className="text-right">
@@ -135,6 +149,47 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
               <div key={key}>
                 <p className="text-xs text-gray-500 mb-0.5">{SPEC_LABELS[key] ?? key}</p>
                 <p className="text-sm text-white">{String(value)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Verification Details */}
+      {verifications.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Lab Verifications</h2>
+          <div className="space-y-4">
+            {verifications.map((v) => (
+              <div key={v.id} className="border border-gray-800 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs bg-green-900/40 text-green-400 border border-green-800 rounded-full px-2 py-0.5">
+                      {v.badge_level === 'premium' ? 'Premium Verified' : 'Verified'}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(v.verified_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <a
+                    href={v.lab_report_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    View Lab Report
+                  </a>
+                </div>
+                {Object.keys(v.assay_results).length > 0 && (
+                  <div className="grid grid-cols-3 gap-x-6 gap-y-2">
+                    {Object.entries(v.assay_results).map(([key, value]) => (
+                      <div key={key}>
+                        <p className="text-xs text-gray-500">{key}</p>
+                        <p className="text-sm text-white">{String(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
