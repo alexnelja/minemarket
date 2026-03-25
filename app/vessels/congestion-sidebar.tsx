@@ -2,12 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { PortCongestion } from '@/lib/vessel-queries';
+import type { MarineWeather } from '@/lib/marine-weather';
+import { MarineWeatherCard } from './marine-weather-card';
 
 const REFRESH_INTERVAL_MS = 60_000;
 
 interface CongestionSidebarProps {
   initialCongestion: PortCongestion[];
   vesselCount: number;
+  portWeather?: MarineWeather[];
 }
 
 function getCongestionBadge(level: string) {
@@ -21,8 +24,9 @@ function getCongestionBadge(level: string) {
   }
 }
 
-export function CongestionSidebar({ initialCongestion, vesselCount }: CongestionSidebarProps) {
+export function CongestionSidebar({ initialCongestion, vesselCount, portWeather = [] }: CongestionSidebarProps) {
   const [congestion, setCongestion] = useState(initialCongestion);
+  const weatherMap = new Map(portWeather.map((w) => [w.harbourId, w]));
 
   const refreshCongestion = useCallback(async () => {
     try {
@@ -107,6 +111,12 @@ export function CongestionSidebar({ initialCongestion, vesselCount }: Congestion
                       <span className="text-white font-medium">{port.vessels_approaching}</span> inbound
                     </div>
                   </div>
+                  {weatherMap.has(port.harbour_id) && (
+                    <MarineWeatherCard
+                      initialData={weatherMap.get(port.harbour_id)}
+                      compact
+                    />
+                  )}
                 </div>
               );
             })}

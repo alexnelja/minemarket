@@ -6,6 +6,7 @@ import { COMMODITY_CONFIG } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 import { ExpressInterestButton } from './express-interest-button';
 import { SPEC_LABELS } from '@/lib/spec-fields';
+import { MarineWeatherCard } from '@/app/vessels/marine-weather-card';
 
 interface ListingDetailPageProps {
   params: Promise<{ id: string }>;
@@ -123,6 +124,9 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
           </div>
         </div>
       </div>
+
+      {/* Loading Port Weather */}
+      <MarineWeatherCard harbourId={listing.loading_port_id} />
 
       {/* Spec sheet */}
       {specEntries.length > 0 && (
