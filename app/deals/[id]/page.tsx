@@ -9,6 +9,7 @@ import { DealActions } from './deal-actions';
 import { MilestoneTimeline } from './milestone-timeline';
 import { DocumentUpload } from './document-upload';
 import { RatingForm } from './rating-form';
+import { getTrustScoreForUser } from '@/lib/trust-queries';
 
 interface DealDetailPageProps {
   params: Promise<{ id: string }>;
@@ -32,6 +33,9 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
   const isBuyer = deal.buyer_id === user.id;
   const hasRated = ratings.some((r) => r.rater_id === user.id);
 
+  const counterpartyId = isBuyer ? deal.seller_id : deal.buyer_id;
+  const counterpartyTrust = await getTrustScoreForUser(counterpartyId);
+
   return (
     <div className="space-y-6 max-w-3xl">
       <Link
@@ -52,9 +56,17 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
                 {DEAL_STATUS_LABELS[deal.status]}
               </span>
             </div>
-            <p className="text-gray-400 text-sm mt-1">
-              {isBuyer ? 'Seller' : 'Buyer'}: {deal.counterparty_name}
-            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-gray-400 text-sm">
+                {isBuyer ? 'Seller' : 'Buyer'}: {deal.counterparty_name}
+              </p>
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${counterpartyTrust.badge.bg} ${counterpartyTrust.badge.color} ${counterpartyTrust.badge.border}`}>
+                {counterpartyTrust.badge.label}
+              </span>
+              <span className="text-xs text-gray-500">
+                {counterpartyTrust.overall.toFixed(1)}/5
+              </span>
+            </div>
           </div>
           <div className="text-right">
             <div className="text-amber-400 text-xl font-bold">
