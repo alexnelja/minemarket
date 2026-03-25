@@ -9,6 +9,7 @@ import { DealActions } from './deal-actions';
 import { MilestoneTimeline } from './milestone-timeline';
 import { DocumentUpload } from './document-upload';
 import { RatingForm } from './rating-form';
+import { HedgingPanel } from './hedging-panel';
 import { getTrustScoreForUser } from '@/lib/trust-queries';
 import { compareSpecs } from '@/lib/spec-comparison';
 import type { SpecTolerance, PriceAdjustmentRule } from '@/lib/spec-comparison';
@@ -141,6 +142,16 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
         currentStatus={deal.status}
         isBuyer={isBuyer}
       />
+
+      {/* Hedging panel — shown for deals in negotiation, second_accept, or escrow_held */}
+      {(['negotiation', 'second_accept', 'escrow_held'] as string[]).includes(deal.status) && (
+        <HedgingPanel
+          dealCurrency={deal.currency}
+          agreedPrice={deal.agreed_price}
+          volumeTonnes={deal.volume_tonnes}
+          commodity={deal.commodity_type}
+        />
+      )}
 
       {/* Milestone timeline */}
       <MilestoneTimeline

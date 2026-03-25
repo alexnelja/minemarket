@@ -38,6 +38,7 @@ export default async function TradingPage({ searchParams }: TradingPageProps) {
         currency="USD"
         indexPrice={indexData?.price}
         indexSource={indexData?.source}
+        indexPeriod={indexData?.period}
         indexTrend={indexData?.trend}
       />
 
