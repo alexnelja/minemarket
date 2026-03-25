@@ -58,7 +58,8 @@ export default function SignupPage() {
           <span className="text-black text-lg font-bold">M</span>
         </div>
         <h1 className="text-xl font-bold">Create your account</h1>
-        <p className="text-gray-400 text-sm mt-1">Join the marketplace</p>
+        <p className="text-gray-400 text-sm mt-1">Buy and sell bulk minerals directly</p>
+        <p className="text-gray-500 text-xs mt-1">Chrome, iron ore, manganese, coal, platinum and more. No middlemen.</p>
       </div>
 
       <form onSubmit={handleSignup} className="space-y-4">

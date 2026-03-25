@@ -214,18 +214,18 @@ export default async function DashboardPage() {
                 <Link
                   key={deal.id}
                   href={`/deals/${deal.id}`}
-                  className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-800/50 transition-colors"
+                  className="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-4 px-4 md:px-5 py-3 hover:bg-gray-800/50 transition-colors"
                 >
                   <CommodityDot commodity={deal.commodity_type} />
-                  <span className="text-sm text-white w-28 flex-shrink-0">{cfg.label}</span>
-                  <span className="text-sm text-gray-400 flex-1">
+                  <span className="text-sm text-white w-20 sm:w-28 flex-shrink-0">{cfg.label}</span>
+                  <span className="hidden sm:block text-sm text-gray-400 flex-1">
                     {deal.counterparty_name}
                   </span>
                   <span className="text-sm text-amber-400 font-medium">
                     {formatCurrency(deal.agreed_price, deal.currency)}/t
                   </span>
                   <StatusBadge status={deal.status} size="md" />
-                  <span className="text-xs text-gray-600 ml-2 w-16 text-right flex-shrink-0">
+                  <span className="hidden sm:block text-xs text-gray-600 ml-2 w-16 text-right flex-shrink-0">
                     {timeAgo(deal.created_at)}
                   </span>
                 </Link>

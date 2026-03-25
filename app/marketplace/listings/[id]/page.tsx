@@ -84,12 +84,20 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
               </div>
               <p className="text-gray-400 text-sm mt-0.5">{listing.seller_company}</p>
               <div className="flex items-center gap-2 mt-1">
-                <span className={`text-xs px-2 py-0.5 rounded-full border ${sellerTrust.badge.bg} ${sellerTrust.badge.color} ${sellerTrust.badge.border}`}>
-                  {sellerTrust.badge.label}
-                </span>
-                <span className="text-xs text-gray-500">
-                  {sellerTrust.overall.toFixed(1)}/5 ({sellerTrust.ratingCount} rating{sellerTrust.ratingCount !== 1 ? 's' : ''})
-                </span>
+                {sellerTrust.ratingCount > 0 ? (
+                  <>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${sellerTrust.badge.bg} ${sellerTrust.badge.color} ${sellerTrust.badge.border}`}>
+                      {sellerTrust.badge.label}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {sellerTrust.overall.toFixed(1)}/5 ({sellerTrust.ratingCount} ratings)
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 rounded-full border border-gray-700 text-gray-400 bg-gray-800">
+                    New seller
+                  </span>
+                )}
               </div>
             </div>
           </div>

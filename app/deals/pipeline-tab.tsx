@@ -8,7 +8,7 @@ interface PipelineTabProps {
 
 export function PipelineTab({ deals }: PipelineTabProps) {
   return (
-    <div className="overflow-x-auto pb-4">
+    <div className="relative overflow-x-auto pb-4">
     <div className="flex gap-4 pr-6 min-w-[1200px]">
       {PIPELINE_COLUMNS.map((column) => {
         const columnDeals = deals.filter((d) => column.statuses.includes(d.status));
@@ -37,6 +37,8 @@ export function PipelineTab({ deals }: PipelineTabProps) {
         );
       })}
     </div>
+    {/* Scroll indicator */}
+    <div className="absolute top-0 right-0 bottom-0 w-8 bg-gradient-to-l from-gray-950 to-transparent pointer-events-none" />
     </div>
   );
 }

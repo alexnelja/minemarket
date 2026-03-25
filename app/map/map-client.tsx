@@ -126,6 +126,7 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
   const corridorSourcesRef = useRef<string[]>([]);
   const savedViewRef = useRef<{ center: [number, number]; zoom: number; pitch: number } | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [legendOpen, setLegendOpen] = useState(false);
   const filteredListings = applyFilters(listings, filters);
 
   useEffect(() => {
@@ -1247,53 +1248,64 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
       )}
 
       {/* Legend overlay bottom-right, below layers panel */}
-        <div className="absolute bottom-8 right-4 z-10 bg-gray-950/80 border border-white/5 rounded-lg p-3 space-y-2 text-xs backdrop-blur-xl max-h-[50vh] overflow-y-auto">
-          <div className="text-gray-400 font-semibold uppercase tracking-wider mb-1">Legend</div>
-          {(Object.entries(COMMODITY_CONFIG) as [CommodityType, { label: string; color: string }][]).map(
-            ([, config]) => (
-              <div key={config.label} className="flex items-center gap-2 text-gray-300">
-                <span
-                  className="w-2.5 h-2.5 rounded-full flex-none"
-                  style={{ backgroundColor: config.color }}
-                />
-                {config.label}
+        <div className="absolute bottom-8 right-4 z-10 bg-gray-950/80 border border-white/5 rounded-lg backdrop-blur-xl">
+          <button
+            onClick={() => setLegendOpen(!legendOpen)}
+            className="px-3 py-2 text-xs text-gray-400 font-semibold uppercase tracking-wider w-full text-left flex items-center justify-between"
+          >
+            Legend <span>{legendOpen ? '\u25BE' : '\u25B8'}</span>
+          </button>
+          {legendOpen && (
+            <div className="px-3 pb-3 space-y-2 text-xs max-h-[40vh] overflow-y-auto">
+              {(Object.entries(COMMODITY_CONFIG) as [CommodityType, { label: string; color: string }][])
+                .filter(([type]) => filteredListings.some((l) => l.commodity_type === type))
+                .map(
+                ([, config]) => (
+                  <div key={config.label} className="flex items-center gap-2 text-gray-300">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-none"
+                      style={{ backgroundColor: config.color }}
+                    />
+                    {config.label}
+                  </div>
+                )
+              )}
+              <div className="flex items-center gap-2 text-gray-300 pt-1 border-t border-gray-700/50">
+                <span className="w-2.5 h-2.5 rounded flex-none bg-emerald-500" />
+                Harbour
               </div>
-            )
+              <div className="pt-1 border-t border-gray-700/50 space-y-1.5">
+                {Object.entries(RAIL_LABELS).map(([cls, label]) => (
+                  <div key={cls} className="flex items-center gap-2 text-gray-300">
+                    <span className="flex-none w-5 rounded" style={{ backgroundColor: RAIL_COLORS[cls], height: RAIL_WIDTHS[cls] }} />
+                    {label}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 text-gray-300">
+                  <span className="flex-none w-5 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(to right, #6b7280 0, #6b7280 4px, transparent 4px, transparent 8px)' }} />
+                  Road haul
+                </div>
+                <div className="flex items-center gap-2 text-gray-300">
+                  <span className="flex-none w-5 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 7px)' }} />
+                  Ocean freight
+                </div>
+              </div>
+              <div className="pt-1 border-t border-gray-700/50 space-y-1.5">
+                <div className="flex items-center gap-2 text-gray-300">
+                  <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #f59e0b' }} />
+                  Bulk carrier (moving)
+                </div>
+                <div className="flex items-center gap-2 text-gray-300">
+                  <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #60a5fa' }} />
+                  Tanker (moving)
+                </div>
+                <div className="flex items-center gap-2 text-gray-300">
+                  <span className="w-2.5 h-2.5 rounded-full flex-none border border-gray-600" style={{ backgroundColor: '#9ca3af' }} />
+                  At anchor
+                </div>
+              </div>
+            </div>
           )}
-          <div className="flex items-center gap-2 text-gray-300 pt-1 border-t border-gray-700/50">
-            <span className="w-2.5 h-2.5 rounded flex-none bg-emerald-500" />
-            Harbour
-          </div>
-          <div className="pt-1 border-t border-gray-700/50 space-y-1.5">
-            {Object.entries(RAIL_LABELS).map(([cls, label]) => (
-              <div key={cls} className="flex items-center gap-2 text-gray-300">
-                <span className="flex-none w-5 rounded" style={{ backgroundColor: RAIL_COLORS[cls], height: RAIL_WIDTHS[cls] }} />
-                {label}
-              </div>
-            ))}
-            <div className="flex items-center gap-2 text-gray-300">
-              <span className="flex-none w-5 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(to right, #6b7280 0, #6b7280 4px, transparent 4px, transparent 8px)' }} />
-              Road haul
-            </div>
-            <div className="flex items-center gap-2 text-gray-300">
-              <span className="flex-none w-5 h-0.5 rounded" style={{ background: 'repeating-linear-gradient(to right, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 7px)' }} />
-              Ocean freight
-            </div>
-          </div>
-          <div className="pt-1 border-t border-gray-700/50 space-y-1.5">
-            <div className="flex items-center gap-2 text-gray-300">
-              <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #f59e0b' }} />
-              Bulk carrier (moving)
-            </div>
-            <div className="flex items-center gap-2 text-gray-300">
-              <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #60a5fa' }} />
-              Tanker (moving)
-            </div>
-            <div className="flex items-center gap-2 text-gray-300">
-              <span className="w-2.5 h-2.5 rounded-full flex-none border border-gray-600" style={{ backgroundColor: '#9ca3af' }} />
-              At anchor
-            </div>
-          </div>
       </div>
     </div>
   );
