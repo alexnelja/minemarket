@@ -14,6 +14,15 @@ const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3Mi
 
 const DURATION = parseInt(process.argv.find(a => a.startsWith('--duration='))?.split('=')[1] || '30') * 1000;
 
+// AIS ship type name lookup
+const AIS_SHIP_TYPES = {
+  70: 'Cargo', 71: 'Cargo (DG)', 72: 'Cargo (DG)', 73: 'Cargo (DG)', 74: 'Cargo (DG)',
+  75: 'Cargo', 76: 'Cargo', 77: 'Cargo', 78: 'Cargo', 79: 'Cargo',
+  80: 'Tanker', 81: 'Tanker (DG)', 82: 'Tanker (DG)', 83: 'Tanker (DG)', 84: 'Tanker (DG)',
+  85: 'Tanker', 86: 'Tanker', 87: 'Tanker', 88: 'Tanker', 89: 'Tanker',
+  90: 'Other', 91: 'Tug', 92: 'Tug', 93: 'Port Tender',
+};
+
 // Bounding boxes for key bulk mineral shipping regions
 const BOUNDING_BOXES = [
   [[-35, 15], [-25, 35]],     // South Africa coast
@@ -82,6 +91,11 @@ async function main() {
                 ? `${sd.Eta.Month}/${sd.Eta.Day} ${sd.Eta.Hour}:${sd.Eta.Minute}`
                 : existing.eta || null,
               ship_type: sd.Type || existing.ship_type || 0,
+              imo: sd.ImoNumber ? String(sd.ImoNumber) : existing.imo || null,
+              vessel_type_name: sd.Type ? AIS_SHIP_TYPES[sd.Type] || null : existing.vessel_type_name || null,
+              length: sd.Dimension?.A && sd.Dimension?.B ? sd.Dimension.A + sd.Dimension.B : existing.length || null,
+              width: sd.Dimension?.C && sd.Dimension?.D ? sd.Dimension.C + sd.Dimension.D : existing.width || null,
+              draught: sd.MaximumStaticDraught || existing.draught || null,
             });
           }
         }

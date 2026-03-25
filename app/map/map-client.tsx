@@ -86,6 +86,13 @@ interface VesselPosition {
   ship_type: number;
   destination: string | null;
   last_seen: string;
+  imo?: string | null;
+  vessel_type_name?: string | null;
+  flag?: string | null;
+  length?: number | null;
+  width?: number | null;
+  draught?: number | null;
+  deadweight?: number | null;
 }
 
 interface MapClientProps {
@@ -120,8 +127,14 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
     vessels: true,
   });
   const mineMarkersRef = useRef<mapboxgl.Marker[]>([]);
-  // Vessel count: only bulk cargo (70-79) and tankers (80-89)
-  const filteredVesselCount = vessels.filter(v => v.lat && v.lng && ((v.ship_type >= 70 && v.ship_type < 80) || (v.ship_type >= 80 && v.ship_type < 90))).length;
+  // Vessel count: all commercial vessels excluding fishing (30-39) and passenger (60-69)
+  const filteredVesselCount = vessels.filter(v => {
+    if (!v.lat || !v.lng) return false;
+    const t = v.ship_type || 0;
+    if (t >= 30 && t < 40) return false;
+    if (t >= 60 && t < 70) return false;
+    return true;
+  }).length;
   const harbourMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const corridorSourcesRef = useRef<string[]>([]);
   const savedViewRef = useRef<{ center: [number, number]; zoom: number; pitch: number } | null>(null);
@@ -419,23 +432,41 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
 
       // --- Vessel layers (GeoJSON, viewport-filtered by Mapbox) ---
       const vesselFeatures: GeoJSON.Feature[] = vessels
-        .filter(v => v.lat && v.lng && ((v.ship_type >= 70 && v.ship_type < 80) || (v.ship_type >= 80 && v.ship_type < 90)))
-        .map(v => ({
-          type: 'Feature' as const,
-          geometry: { type: 'Point' as const, coordinates: [v.lng, v.lat] },
-          properties: {
-            mmsi: v.mmsi,
-            name: v.name || 'Unknown',
-            speed: v.speed || 0,
-            course: v.course || 0,
-            heading: v.heading || v.course || 0,
-            ship_type: v.ship_type,
-            destination: v.destination || '',
-            isMoving: (v.speed || 0) > 0.5,
-            isBulk: v.ship_type >= 70 && v.ship_type < 80,
-            color: (v.ship_type >= 70 && v.ship_type < 80) ? '#f59e0b' : '#60a5fa',
-          },
-        }));
+        .filter(v => {
+          if (!v.lat || !v.lng) return false;
+          const t = v.ship_type || 0;
+          // Exclude fishing (30-39) and passenger (60-69)
+          if (t >= 30 && t < 40) return false;
+          if (t >= 60 && t < 70) return false;
+          return true;
+        })
+        .map(v => {
+          const t = v.ship_type || 0;
+          return {
+            type: 'Feature' as const,
+            geometry: { type: 'Point' as const, coordinates: [v.lng, v.lat] },
+            properties: {
+              mmsi: v.mmsi,
+              name: v.name || 'Unknown',
+              speed: v.speed || 0,
+              course: v.course || 0,
+              heading: v.heading || v.course || 0,
+              ship_type: v.ship_type,
+              destination: v.destination || '',
+              isMoving: (v.speed || 0) > 0.5,
+              isBulk: t >= 70 && t < 80,
+              color: t >= 70 && t < 80 ? '#f59e0b'  // cargo = amber
+                   : t >= 80 && t < 90 ? '#60a5fa'  // tanker = blue
+                   : t === 0 ? '#9ca3af'            // unknown = gray (likely commercial)
+                   : '#6b7280',                      // other = dark gray
+              imo: v.imo || '',
+              vessel_type_name: v.vessel_type_name || '',
+              flag: v.flag || '',
+              length: v.length || 0,
+              deadweight: v.deadweight || 0,
+            },
+          };
+        });
 
       map.addSource('vessels', {
         type: 'geojson',
@@ -509,12 +540,21 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
           if (!e.features?.[0]) return;
           const props = e.features[0].properties;
           const coords = (e.features[0].geometry as GeoJSON.Point).coordinates;
+          const imoStr = props?.imo ? ` · IMO: ${props.imo}` : '';
+          const typeStr = props?.vessel_type_name ? props.vessel_type_name : '';
+          const flagStr = props?.flag ? props.flag : '';
+          const typeFlagLine = [typeStr, flagStr].filter(Boolean).join(' · ');
+          const lengthStr = props?.length && Number(props.length) > 0 ? `${Number(props.length)}m` : '';
+          const dwtStr = props?.deadweight && Number(props.deadweight) > 0 ? `DWT: ${Number(props.deadweight).toLocaleString()}t` : '';
+          const dimsLine = [lengthStr, dwtStr].filter(Boolean).join(' · ');
           new mapboxgl.Popup({ offset: 10, closeButton: false })
             .setLngLat(coords as [number, number])
             .setHTML(`
               <div style="font-family:sans-serif;padding:2px;">
                 <div style="font-weight:600;font-size:12px;color:#f9fafb;">${props?.name}</div>
-                <div style="font-size:11px;color:#9ca3af;">MMSI: ${props?.mmsi}</div>
+                <div style="font-size:11px;color:#9ca3af;">MMSI: ${props?.mmsi}${imoStr}</div>
+                ${typeFlagLine ? `<div style="font-size:11px;color:#9ca3af;">${typeFlagLine}</div>` : ''}
+                ${dimsLine ? `<div style="font-size:11px;color:#9ca3af;">${dimsLine}</div>` : ''}
                 <div style="font-size:11px;color:#9ca3af;">${Number(props?.speed).toFixed(1)} kn · ${Number(props?.course).toFixed(0)}°</div>
                 ${props?.destination ? `<div style="font-size:11px;color:#60a5fa;">&rarr; ${props.destination}</div>` : ''}
               </div>
@@ -1247,6 +1287,21 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
         </div>
       )}
 
+      {/* Vessel data freshness indicator */}
+      {vessels.length > 0 && (() => {
+        const latest = vessels.reduce((max, v) => {
+          const t = v.last_seen ? new Date(v.last_seen).getTime() : 0;
+          return t > max ? t : max;
+        }, 0);
+        const ago = latest > 0 ? Math.floor((Date.now() - latest) / 60000) : 0;
+        const label = ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.floor(ago/60)}h ago` : `${Math.floor(ago/1440)}d ago`;
+        return (
+          <div className="absolute bottom-2 left-2 z-10 text-[10px] text-gray-500 bg-gray-950/60 backdrop-blur-sm px-2 py-1 rounded">
+            {filteredVesselCount} vessels &middot; {label}
+          </div>
+        );
+      })()}
+
       {/* Legend overlay bottom-right, below layers panel */}
         <div className="absolute bottom-8 right-4 z-10 bg-gray-950/80 border border-white/5 rounded-lg backdrop-blur-xl">
           <button
@@ -1293,11 +1348,15 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
               <div className="pt-1 border-t border-gray-700/50 space-y-1.5">
                 <div className="flex items-center gap-2 text-gray-300">
                   <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #f59e0b' }} />
-                  Bulk carrier (moving)
+                  Cargo vessel
                 </div>
                 <div className="flex items-center gap-2 text-gray-300">
                   <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #60a5fa' }} />
-                  Tanker (moving)
+                  Tanker
+                </div>
+                <div className="flex items-center gap-2 text-gray-300">
+                  <span className="flex-none" style={{ width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent', borderBottom: '8px solid #9ca3af' }} />
+                  Commercial (unclassified)
                 </div>
                 <div className="flex items-center gap-2 text-gray-300">
                   <span className="w-2.5 h-2.5 rounded-full flex-none border border-gray-600" style={{ backgroundColor: '#9ca3af' }} />

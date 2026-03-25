@@ -94,7 +94,14 @@ export function CongestionSidebar({ initialCongestion, vesselCount, portWeather 
                       <p className="text-sm font-medium text-white truncate">
                         {port.harbour_name}
                       </p>
-                      <p className="text-[10px] text-gray-500">{port.harbour_country}</p>
+                      <p className="text-[10px] text-gray-500">
+                        {port.harbour_country}
+                        {port.last_calculated && (() => {
+                          const ago = Math.floor((Date.now() - new Date(port.last_calculated).getTime()) / 60000);
+                          const label = ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.floor(ago/60)}h ago` : `${Math.floor(ago/1440)}d ago`;
+                          return <span className="ml-1 text-gray-600"> · {label}</span>;
+                        })()}
+                      </p>
                     </div>
                     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${badge.className} whitespace-nowrap`}>
                       {badge.label}

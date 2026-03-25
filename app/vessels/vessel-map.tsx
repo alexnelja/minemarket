@@ -218,7 +218,15 @@ export function VesselMap({ initialVessels, initialCongestion }: VesselMapProps)
 
       {/* Status bar */}
       <div className="absolute bottom-3 left-3 bg-gray-900/90 rounded-lg px-3 py-1.5 text-[10px] text-gray-500 border border-gray-800 z-10">
-        {vessels.length} vessels tracked &middot; Updated {lastUpdated.toLocaleTimeString()}
+        {vessels.length} vessels tracked &middot; Updated {(() => {
+          const latest = vessels.reduce((max, v) => {
+            const t = v.last_seen ? new Date(v.last_seen).getTime() : 0;
+            return t > max ? t : max;
+          }, 0);
+          if (latest === 0) return lastUpdated.toLocaleTimeString();
+          const ago = Math.floor((Date.now() - latest) / 60000);
+          return ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.floor(ago/60)}h ago` : `${Math.floor(ago/1440)}d ago`;
+        })()}
       </div>
 
       {vessels.length === 0 && (

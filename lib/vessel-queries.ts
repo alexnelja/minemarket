@@ -12,6 +12,13 @@ export interface VesselPosition {
   destination: string | null;
   eta: string | null;
   last_seen: string;
+  imo?: string | null;
+  vessel_type_name?: string | null;
+  flag?: string | null;
+  length?: number | null;
+  width?: number | null;
+  draught?: number | null;
+  deadweight?: number | null;
 }
 
 export interface PortCongestion {
