@@ -38,21 +38,26 @@ Deno.serve(async (_req) => {
 
     const connectionPromise = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
+        console.log("WebSocket timeout, closing...");
         ws.close();
-        reject(new Error("WebSocket timeout"));
-      }, 65000); // 65 second timeout
+        resolve();
+      }, 45000); // 45 second safety timeout
 
       ws.onopen = () => {
+        console.log("WebSocket connected, sending subscription...");
         ws.send(JSON.stringify({
           APIKey: AIS_API_KEY,
           BoundingBoxes: BOUNDING_BOXES,
           FilterMessageTypes: ["PositionReport", "ShipStaticData"],
         }));
+        console.log("Subscription sent, collecting for 30s...");
       };
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
+          const raw = typeof event.data === "string" ? event.data : "";
+          if (!raw) return;
+          const data = JSON.parse(raw);
           const meta = data.MetaData;
           if (!meta?.MMSI) return;
 
@@ -100,12 +105,13 @@ Deno.serve(async (_req) => {
         reject(new Error("WebSocket error"));
       };
 
-      // Collect for 60 seconds then close
+      // Collect for 30 seconds then close
       setTimeout(() => {
+        console.log(`Collected ${vessels.size} vessels, closing WebSocket...`);
         clearTimeout(timeout);
         ws.close();
         resolve();
-      }, 60000);
+      }, 30000);
 
       ws.onclose = () => {
         clearTimeout(timeout);

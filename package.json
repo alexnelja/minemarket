@@ -10,7 +10,8 @@
     "ingest:mines": "node scripts/ingest-icmm-mines.js",
     "ingest:ports": "node scripts/ingest-unlocode-ports.js",
     "verify:mines": "node scripts/verify-mines.js",
-    "ingest:all": "node scripts/ingest-icmm-mines.js && node scripts/ingest-unlocode-ports.js && node scripts/verify-mines.js"
+    "ingest:all": "node scripts/ingest-icmm-mines.js && node scripts/ingest-unlocode-ports.js && node scripts/verify-mines.js",
+    "collect:vessels": "node scripts/collect-vessels.js --duration=30"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",
@@ -21,6 +22,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sea-ports": "^0.0.9",
+    "ws": "^8.20.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
