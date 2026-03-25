@@ -651,7 +651,7 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
     source.setData({ type: 'FeatureCollection', features });
   }
 
-  function renderOceanRoute(map: mapboxgl.Map, listing: ListingWithDetails) {
+  async function renderOceanRoute(map: mapboxgl.Map, listing: ListingWithDetails) {
     const harbour = harbours.find((h) => h.id === listing.loading_port_id);
     const from = harbour ? harbour.location : listing.mine_location;
 
@@ -661,25 +661,43 @@ export function MapClient({ mines, harbours, listings, routes, vessels }: MapCli
     const dest = COMMODITY_DESTINATIONS[listing.commodity_type];
     if (!dest) return;
 
-    const segment = generateOceanRoute(
-      from,
-      dest,
-      `${listing.harbour_name} → ${dest.name}`
-    );
+    try {
+      const res = await fetch(`/api/sea-route?from_lat=${from.lat}&from_lng=${from.lng}&to_lat=${dest.lat}&to_lng=${dest.lng}&volume=${listing.volume_tonnes}`);
+      const data = await res.json();
 
-    const source = map.getSource('ocean-routes') as mapboxgl.GeoJSONSource | undefined;
-    if (!source) return;
+      const source = map.getSource('ocean-routes') as mapboxgl.GeoJSONSource | undefined;
+      if (!source) return;
 
-    source.setData({
-      type: 'FeatureCollection',
-      features: [
-        {
+      source.setData({
+        type: 'FeatureCollection',
+        features: [{
           type: 'Feature',
-          geometry: { type: 'LineString', coordinates: segment.coordinates },
-          properties: { label: segment.label, distance_km: segment.distance_km },
-        },
-      ],
-    });
+          geometry: { type: 'LineString', coordinates: data.coordinates },
+          properties: { label: `${listing.harbour_name} \u2192 ${dest.name}`, distance_nm: data.distanceNm },
+        }],
+      });
+    } catch {
+      // Fallback to straight line via generateOceanRoute
+      const segment = generateOceanRoute(
+        from,
+        dest,
+        `${listing.harbour_name} \u2192 ${dest.name}`
+      );
+
+      const source = map.getSource('ocean-routes') as mapboxgl.GeoJSONSource | undefined;
+      if (!source) return;
+
+      source.setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: segment.coordinates },
+            properties: { label: segment.label, distance_km: segment.distance_km },
+          },
+        ],
+      });
+    }
   }
 
   function clearOceanRoute() {
