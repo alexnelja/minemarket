@@ -5,6 +5,7 @@ import { getSellerTrustScore, getListingVerifications } from '@/lib/trust-querie
 import { COMMODITY_CONFIG } from '@/lib/types';
 import { timeAgo } from '@/lib/format';
 import { ExpressInterestButton } from './express-interest-button';
+import { CollapsibleSection } from './collapsible-section';
 import { SPEC_LABELS } from '@/lib/spec-fields';
 import { SUBTYPE_LABELS } from '@/lib/commodity-subtypes';
 import { MarineWeatherCard } from '@/app/vessels/marine-weather-card';
@@ -158,8 +159,7 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
 
       {/* Spec sheet */}
       {specEntries.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Spec Sheet</h2>
+        <CollapsibleSection title="SPEC SHEET" defaultOpen>
           <div className="grid grid-cols-2 gap-x-8 gap-y-3">
             {specEntries.map(([key, value]) => (
               <div key={key}>
@@ -168,7 +168,7 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
               </div>
             ))}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
       {/* Price vs Index (if price breakdown available) */}
@@ -191,13 +191,10 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
 
       {/* Shipping Estimate */}
       {listing.harbour_location.lat !== 0 && listing.harbour_location.lng !== 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
-            Shipping Estimate
-          </h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Estimated sea distances from {listing.harbour_name} ({listing.volume_tonnes.toLocaleString()} t cargo)
-          </p>
+        <CollapsibleSection
+          title="SHIPPING ESTIMATE"
+          subtitle={`Estimated sea distances from ${listing.harbour_name} (${listing.volume_tonnes.toLocaleString()} t cargo)`}
+        >
           <div className="space-y-3">
             {COMMON_DESTINATIONS.map((dest) => {
               const route = estimateRoute(
@@ -228,7 +225,7 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
               );
             })}
           </div>
-        </div>
+        </CollapsibleSection>
       )}
 
       {/* Verification Details */}
@@ -272,12 +269,12 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
         </div>
       )}
 
-      {/* Express Interest */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <div className="flex items-center justify-between">
+      {/* Sticky CTA */}
+      <div className="sticky bottom-0 bg-gray-950/95 backdrop-blur-lg border-t border-gray-800 px-6 py-4 -mx-6 mt-6">
+        <div className="flex items-center justify-between max-w-3xl">
           <div>
-            <h2 className="text-sm font-semibold text-white">Interested in this listing?</h2>
-            <p className="text-xs text-gray-500 mt-1">Start a deal by expressing interest to the seller.</p>
+            <p className="text-sm font-semibold text-white">Interested in this listing?</p>
+            <p className="text-xs text-gray-500">Start a deal by expressing interest to the seller.</p>
           </div>
           <ExpressInterestButton listingId={listing.id} />
         </div>

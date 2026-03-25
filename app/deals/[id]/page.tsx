@@ -10,6 +10,7 @@ import { MilestoneTimeline } from './milestone-timeline';
 import { DocumentUpload } from './document-upload';
 import { RatingForm } from './rating-form';
 import { HedgingPanel } from './hedging-panel';
+import { DealProgress } from './deal-progress';
 import { getTrustScoreForUser } from '@/lib/trust-queries';
 import { compareSpecs } from '@/lib/spec-comparison';
 import type { SpecTolerance, PriceAdjustmentRule } from '@/lib/spec-comparison';
@@ -66,6 +67,9 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
       >
         ← Back to Deals
       </Link>
+
+      {/* Deal progress indicator */}
+      <DealProgress status={deal.status} isBuyer={isBuyer} />
 
       {/* Header */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import { COMMODITY_CONFIG } from '@/lib/types';
+import { COMMODITY_CONFIG, COMMODITY_PRICING } from '@/lib/types';
 import type { CommodityType, CurrencyType } from '@/lib/types';
 import { INCOTERMS, INCOTERM_DESCRIPTIONS } from '@/lib/incoterms';
 import { SPEC_FIELDS } from '@/lib/spec-fields';
@@ -42,6 +42,9 @@ export default function NewListingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [allMines, setAllMines] = useState<MineOption[]>([]);
   const [selectedMineId, setSelectedMineId] = useState<string | null>(null);
+
+  // Commodity search state
+  const [commoditySearch, setCommoditySearch] = useState('');
 
   // Price estimate state
   const [priceEstimate, setPriceEstimate] = useState<PriceEstimate | null>(null);
@@ -312,8 +315,17 @@ export default function NewListingPage() {
         {/* Commodity selector */}
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-3">Commodity</label>
+          <input
+            type="text"
+            placeholder="Search commodities..."
+            value={commoditySearch}
+            onChange={(e) => setCommoditySearch(e.target.value)}
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-500 mb-3"
+          />
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {(Object.entries(COMMODITY_CONFIG) as [CommodityType, { label: string; color: string }][]).map(
+            {(Object.entries(COMMODITY_CONFIG) as [CommodityType, { label: string; color: string }][])
+              .filter(([, cfg]) => cfg.label.toLowerCase().includes(commoditySearch.toLowerCase()))
+              .map(
               ([type, cfg]) => (
                 <button
                   key={type}
@@ -329,7 +341,10 @@ export default function NewListingPage() {
                     className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                     style={{ backgroundColor: cfg.color }}
                   />
-                  {cfg.label}
+                  <div className="text-left">
+                    <div>{cfg.label}</div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">{COMMODITY_PRICING[type]?.label}</div>
+                  </div>
                 </button>
               )
             )}
