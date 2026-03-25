@@ -97,7 +97,15 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
   const [selectedHarbour, setSelectedHarbour] = useState<HarbourWithGeo | null>(null);
   const [selectedRailLine, setSelectedRailLine] = useState<RailLine | null>(null);
   const [selectedCorridor, setSelectedCorridor] = useState<CommodityCorridor | null>(null);
-  const [showCorridors, setShowCorridors] = useState(false);
+  const [layers, setLayers] = useState({
+    mines: true,
+    ports: true,
+    corridors: true,
+    roads: true,
+    ocean: true,
+  });
+  const mineMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const harbourMarkersRef = useRef<mapboxgl.Marker[]>([]);
   const corridorSourcesRef = useRef<string[]>([]);
   const savedViewRef = useRef<{ center: [number, number]; zoom: number; pitch: number } | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -339,6 +347,7 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         });
 
         markersRef.current.push(marker);
+        mineMarkersRef.current.push(marker);
       }
 
       // --- Harbour markers ---
@@ -361,7 +370,32 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         });
 
         markersRef.current.push(marker);
+        harbourMarkersRef.current.push(marker);
       }
+
+      // --- Dynamic zoom-based marker sizing ---
+      function updateMarkerSizes() {
+        const zoom = map.getZoom();
+        // Scale: zoom 3=8px, zoom 5=12px, zoom 7=16px, zoom 10=22px
+        const mineSize = Math.max(4, Math.min(20, 2 + zoom * 2));
+        const portSize = Math.max(4, Math.min(18, 2 + zoom * 1.8));
+
+        mineMarkersRef.current.forEach(m => {
+          const el = m.getElement();
+          el.style.width = `${mineSize}px`;
+          el.style.height = `${mineSize}px`;
+        });
+
+        harbourMarkersRef.current.forEach(m => {
+          const el = m.getElement();
+          el.style.width = `${portSize}px`;
+          el.style.height = `${portSize}px`;
+        });
+      }
+
+      map.on('zoom', updateMarkerSizes);
+      // Initial sizing
+      updateMarkerSizes();
 
       // --- Fetch road routes from Mapbox Directions API ---
       fetchRoadRoutesSequentially(map);
@@ -370,6 +404,8 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     return () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
+      mineMarkersRef.current = [];
+      harbourMarkersRef.current = [];
       mapReadyRef.current = false;
       map.remove();
       mapRef.current = null;
@@ -664,16 +700,39 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
     corridorSourcesRef.current = [];
   }
 
-  function toggleCorridors() {
-    if (showCorridors) {
-      clearCorridorLayers();
-      setShowCorridors(false);
-      setSelectedCorridor(null);
-    } else {
-      setShowCorridors(true);
-      renderCorridors();
+  // Layer visibility effect
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current) return;
+
+    // Toggle mine markers
+    mineMarkersRef.current.forEach(m => {
+      m.getElement().style.display = layers.mines ? '' : 'none';
+    });
+
+    // Toggle harbour markers
+    harbourMarkersRef.current.forEach(m => {
+      m.getElement().style.display = layers.ports ? '' : 'none';
+    });
+
+    // Toggle rail corridor layers
+    const railLayerIds = ['rail-heavyhaul30t-layer', 'rail-heavyhaul26t-layer', 'rail-mainline20t-layer', 'osm-rail-bg-layer'];
+    railLayerIds.forEach(id => {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, 'visibility', layers.corridors ? 'visible' : 'none');
+      }
+    });
+
+    // Toggle road routes
+    if (map.getLayer('road-routes-layer')) {
+      map.setLayoutProperty('road-routes-layer', 'visibility', layers.roads ? 'visible' : 'none');
     }
-  }
+
+    // Toggle ocean routes
+    if (map.getLayer('ocean-routes-layer')) {
+      map.setLayoutProperty('ocean-routes-layer', 'visibility', layers.ocean ? 'visible' : 'none');
+    }
+  }, [layers]);
 
   function clearSelection() {
     // Remove highlight markers
@@ -810,17 +869,34 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         />
       </div>
 
-      {/* Corridor toggle button */}
-      <button
-        onClick={toggleCorridors}
-        className={`absolute top-[92px] right-4 z-20 text-xs px-3 py-1.5 rounded-lg backdrop-blur-xl border transition-colors ${
-          showCorridors
-            ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-            : 'bg-gray-950/20 text-gray-400 border-white/10 hover:text-white'
-        }`}
-      >
-        {showCorridors ? '● Corridors ON' : '○ Show Corridors'}
-      </button>
+      {/* Map layers settings panel */}
+      <div className="absolute top-[92px] right-4 z-20 bg-gray-950/80 backdrop-blur-xl border border-white/10 rounded-xl p-3 space-y-1.5">
+        <p className="text-[10px] uppercase text-gray-500 tracking-wider mb-2">Map Layers</p>
+        {[
+          { key: 'mines', label: 'Mines', color: '#f59e0b' },
+          { key: 'ports', label: 'Ports', color: '#10b981' },
+          { key: 'corridors', label: 'Rail Corridors', color: '#f87171' },
+          { key: 'roads', label: 'Road Routes', color: '#6b7280' },
+          { key: 'ocean', label: 'Ocean Routes', color: '#60a5fa' },
+        ].map(({ key, label, color }) => (
+          <label key={key} className="flex items-center gap-2 cursor-pointer text-xs">
+            <input
+              type="checkbox"
+              checked={layers[key as keyof typeof layers]}
+              onChange={() => setLayers(prev => ({ ...prev, [key]: !prev[key as keyof typeof layers] }))}
+              className="sr-only"
+            />
+            <span className={`w-3 h-3 rounded-sm border transition-colors ${
+              layers[key as keyof typeof layers]
+                ? 'border-transparent'
+                : 'border-gray-600 bg-gray-800'
+            }`} style={layers[key as keyof typeof layers] ? { backgroundColor: color } : {}} />
+            <span className={`${layers[key as keyof typeof layers] ? 'text-gray-200' : 'text-gray-500'}`}>
+              {label}
+            </span>
+          </label>
+        ))}
+      </div>
 
       {/* Corridor detail panel */}
       {selectedCorridor && (
@@ -1035,8 +1111,8 @@ export function MapClient({ mines, harbours, listings, routes }: MapClientProps)
         </div>
       )}
 
-      {/* Legend overlay bottom-right of map area */}
-        <div className="absolute bottom-8 right-3 z-10 bg-gray-950/20 border border-white/5 rounded-lg p-3 space-y-2 text-xs backdrop-blur-xl">
+      {/* Legend overlay bottom-left of map area */}
+        <div className="absolute bottom-8 left-3 z-10 bg-gray-950/20 border border-white/5 rounded-lg p-3 space-y-2 text-xs backdrop-blur-xl">
           <div className="text-gray-400 font-semibold uppercase tracking-wider mb-1">Legend</div>
           {(Object.entries(COMMODITY_CONFIG) as [CommodityType, { label: string; color: string }][]).map(
             ([, config]) => (
