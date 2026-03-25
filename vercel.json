@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/vessels",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 */6 * * *"
     }
   ]
 }
