@@ -31,9 +31,15 @@ export function StatsRow({ stats, currency, indexPrice, indexSource, indexPeriod
 
   function formatPeriod(period?: string): string {
     if (!period) return '';
-    // Period is typically "2024-03" or ISO date string
     try {
-      const d = new Date(period.length <= 7 ? `${period}-01` : period);
+      // Handle formats: "2024-03", "2024M3", "2024M12", ISO dates
+      let normalized = period;
+      const mMatch = period.match(/^(\d{4})M(\d{1,2})$/);
+      if (mMatch) {
+        normalized = `${mMatch[1]}-${mMatch[2].padStart(2, '0')}`;
+      }
+      const d = new Date(normalized.length <= 7 ? `${normalized}-01` : normalized);
+      if (isNaN(d.getTime())) return `Updated ${period}`;
       const now = new Date();
       const diffMs = now.getTime() - d.getTime();
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
