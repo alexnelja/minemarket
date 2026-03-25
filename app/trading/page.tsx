@@ -1,6 +1,7 @@
 import { COMMODITY_CONFIG } from '@/lib/types';
 import type { CommodityType } from '@/lib/types';
 import { getTradingStats, getCompletedDeals } from '@/lib/deal-queries';
+import { getCommodityPriceForDisplay } from '@/lib/commodity-prices';
 import { StatsRow } from './stats-row';
 import { PriceChart } from './price-chart';
 import { RecentDealsTable } from './recent-deals-table';
@@ -15,9 +16,10 @@ export default async function TradingPage({ searchParams }: TradingPageProps) {
   const commodity = (params.commodity as CommodityType) || 'chrome';
   const config = COMMODITY_CONFIG[commodity];
 
-  const [stats, completedDeals] = await Promise.all([
+  const [stats, completedDeals, indexData] = await Promise.all([
     getTradingStats(commodity),
     getCompletedDeals(commodity),
+    getCommodityPriceForDisplay(commodity),
   ]);
 
   return (
@@ -31,7 +33,13 @@ export default async function TradingPage({ searchParams }: TradingPageProps) {
       <CommodityTabSwitcher activeCommodity={commodity} />
 
       {/* Stats */}
-      <StatsRow stats={stats} currency="USD" />
+      <StatsRow
+        stats={stats}
+        currency="USD"
+        indexPrice={indexData?.price}
+        indexSource={indexData?.source}
+        indexTrend={indexData?.trend}
+      />
 
       {/* Price chart */}
       <PriceChart data={stats.priceHistory} color={config.color} />
