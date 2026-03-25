@@ -24,7 +24,7 @@ export default function LoginPage() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push('/map');
+      router.push('/deals');
       router.refresh();
     }
   }

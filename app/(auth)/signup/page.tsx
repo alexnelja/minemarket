@@ -47,7 +47,7 @@ export default function SignupPage() {
       }
     }
 
-    router.push('/map');
+    router.push('/deals');
     router.refresh();
   }
 
