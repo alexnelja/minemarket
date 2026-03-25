@@ -10,6 +10,7 @@ const navItems = [
   { label: 'Trading', href: '/trading', icon: TradingIcon },
   { label: 'Marketplace', href: '/marketplace', icon: MarketplaceIcon },
   { label: 'Deals', href: '/deals', icon: DealsIcon },
+  { label: 'Vessels', href: '/vessels', icon: VesselsIcon },
   { label: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
   { label: 'Intelligence', href: '/intelligence', icon: IntelligenceIcon },
 ];
@@ -154,6 +155,17 @@ function IntelligenceIcon({ active }: { active: boolean }) {
       <path d="M2 13V7H5V13H2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M6.5 13V4H9.5V13H6.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       <path d="M11 13V1H14V13H11Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function VesselsIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={active ? 'text-white' : 'text-gray-500'}>
+      <path d="M2 11L8 4L14 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M1 13H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M4 13V11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M12 13V11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
