@@ -212,7 +212,7 @@ export default async function DashboardPage() {
             </Link>
           </div>
         ) : (
-          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden divide-y divide-gray-800">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-x-auto overflow-hidden divide-y divide-gray-800">
             {activeDeals.map((deal) => {
               const cfg = COMMODITY_CONFIG[deal.commodity_type];
               const statusColors = DEAL_STATUS_COLORS[deal.status];
@@ -275,20 +275,28 @@ export default async function DashboardPage() {
 
             {/* Dimension breakdown */}
             <div className="flex-1 space-y-2.5">
-              {trustScore.dimensions.map((d) => (
-                <div key={d.dimension}>
-                  <div className="flex items-center justify-between text-xs mb-0.5">
-                    <span className="text-gray-400">{d.label} ({(d.weight * 100).toFixed(0)}%)</span>
-                    <span className="text-white font-medium">{d.bayesianAvg.toFixed(1)} / 5</span>
-                  </div>
-                  <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-amber-500"
-                      style={{ width: `${(d.bayesianAvg / 5) * 100}%` }}
-                    />
-                  </div>
+              {trustScore.ratingCount === 0 ? (
+                <div className="flex items-center h-full">
+                  <p className="text-sm text-gray-500">
+                    No ratings yet — your score will be calculated after your first deal.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                trustScore.dimensions.map((d) => (
+                  <div key={d.dimension}>
+                    <div className="flex items-center justify-between text-xs mb-0.5">
+                      <span className="text-gray-400">{d.label} ({(d.weight * 100).toFixed(0)}%)</span>
+                      <span className="text-white font-medium">{d.bayesianAvg.toFixed(1)} / 5</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-amber-500"
+                        style={{ width: `${(d.bayesianAvg / 5) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
             {/* Stats */}
