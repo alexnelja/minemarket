@@ -7,6 +7,7 @@ import { timeAgo } from '@/lib/format';
 import { ExpressInterestButton } from './express-interest-button';
 import { SPEC_LABELS } from '@/lib/spec-fields';
 import { MarineWeatherCard } from '@/app/vessels/marine-weather-card';
+import { estimateRoute, formatDistance, COMMON_DESTINATIONS } from '@/lib/distance';
 
 interface ListingDetailPageProps {
   params: Promise<{ id: string }>;
@@ -139,6 +140,48 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
                 <p className="text-sm text-white">{String(value)}</p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Shipping Estimate */}
+      {listing.harbour_location.lat !== 0 && listing.harbour_location.lng !== 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+            Shipping Estimate
+          </h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Estimated sea distances from {listing.harbour_name} ({listing.volume_tonnes.toLocaleString()} t cargo)
+          </p>
+          <div className="space-y-3">
+            {COMMON_DESTINATIONS.map((dest) => {
+              const route = estimateRoute(
+                listing.harbour_location.lat,
+                listing.harbour_location.lng,
+                dest.lat,
+                dest.lng,
+                listing.volume_tonnes,
+              );
+              return (
+                <div
+                  key={dest.name}
+                  className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0"
+                >
+                  <div>
+                    <p className="text-sm text-white">{dest.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {formatDistance(route.nauticalMiles)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-amber-400">{route.transitDays} days</p>
+                    <p className="text-xs text-gray-500">
+                      {route.co2Tonnes} t CO₂
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

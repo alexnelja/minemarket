@@ -91,7 +91,7 @@ export async function getListingById(id: string): Promise<ListingWithDetails | n
     .select(`
       *,
       mines!source_mine_id (name, region, location),
-      harbours!loading_port_id (name)
+      harbours!loading_port_id (name, location)
     `)
     .eq('id', id)
     .single();
@@ -114,6 +114,7 @@ export async function getListingById(id: string): Promise<ListingWithDetails | n
     mine_region: (mine?.region as string) ?? 'Unknown',
     mine_location: parseGeoPoint(mine?.location) ?? { lng: 0, lat: 0 },
     harbour_name: (harbour?.name as string) ?? 'Unknown',
+    harbour_location: parseGeoPoint(harbour?.location) ?? { lng: 0, lat: 0 },
     seller_company: (seller?.company_name as string) ?? 'Unknown',
   } as ListingWithDetails;
 }

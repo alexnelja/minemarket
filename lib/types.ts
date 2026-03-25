@@ -174,6 +174,7 @@ export interface ListingWithDetails extends Listing {
   mine_region: string;
   mine_location: GeoPoint;
   harbour_name: string;
+  harbour_location: GeoPoint;
   seller_company: string;
 }
 
