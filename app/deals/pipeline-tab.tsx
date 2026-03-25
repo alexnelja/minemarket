@@ -8,7 +8,8 @@ interface PipelineTabProps {
 
 export function PipelineTab({ deals }: PipelineTabProps) {
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4 pr-6">
+    <div className="overflow-x-auto pb-4">
+    <div className="flex gap-4 pr-6 min-w-[1200px]">
       {PIPELINE_COLUMNS.map((column) => {
         const columnDeals = deals.filter((d) => column.statuses.includes(d.status));
         return (
@@ -35,6 +36,7 @@ export function PipelineTab({ deals }: PipelineTabProps) {
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
