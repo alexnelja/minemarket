@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from './supabase-server';
+import { createServerSupabaseClient, createAdminSupabaseClient } from './supabase-server';
 import { parseGeoPoint } from './geo';
 import type {
   Listing, MineWithGeo, HarbourWithGeo, ListingWithDetails,
@@ -35,23 +35,30 @@ export async function getMines(): Promise<MineWithGeo[]> {
 
 export async function getActiveListings(): Promise<ListingWithDetails[]> {
   const supabase = await createServerSupabaseClient();
+  const admin = createAdminSupabaseClient();
   const { data, error } = await supabase
     .from('listings')
     .select(`
       *,
       mines!source_mine_id (name, region, location),
-      harbours!loading_port_id (name),
-      users!seller_id (company_name)
+      harbours!loading_port_id (name)
     `)
     .eq('status', 'active')
     .order('created_at', { ascending: false });
 
   if (error || !data) return [];
 
+  // Fetch seller company names via admin client to bypass RLS
+  const sellerIds = [...new Set(data.map((l: Record<string, unknown>) => l.seller_id as string))];
+  const { data: sellers } = await admin
+    .from('users')
+    .select('id, company_name')
+    .in('id', sellerIds);
+  const sellerMap = new Map((sellers ?? []).map((s: { id: string; company_name: string }) => [s.id, s.company_name]));
+
   return data.map((l: Record<string, unknown>) => {
     const mine = l.mines as Record<string, unknown> | null;
     const harbour = l.harbours as Record<string, unknown> | null;
-    const seller = l.users as Record<string, unknown> | null;
 
     return {
       ...l,
@@ -59,7 +66,7 @@ export async function getActiveListings(): Promise<ListingWithDetails[]> {
       mine_region: (mine?.region as string) ?? 'Unknown',
       mine_location: parseGeoPoint(mine?.location) ?? { lng: 0, lat: 0 },
       harbour_name: (harbour?.name as string) ?? 'Unknown',
-      seller_company: (seller?.company_name as string) ?? 'Unknown',
+      seller_company: sellerMap.get(l.seller_id as string) ?? 'Unknown',
     } as ListingWithDetails;
   });
 }
@@ -78,13 +85,13 @@ export async function getActiveRequirements(): Promise<Requirement[]> {
 
 export async function getListingById(id: string): Promise<ListingWithDetails | null> {
   const supabase = await createServerSupabaseClient();
+  const admin = createAdminSupabaseClient();
   const { data, error } = await supabase
     .from('listings')
     .select(`
       *,
       mines!source_mine_id (name, region, location),
-      harbours!loading_port_id (name),
-      users!seller_id (company_name)
+      harbours!loading_port_id (name)
     `)
     .eq('id', id)
     .single();
@@ -93,7 +100,13 @@ export async function getListingById(id: string): Promise<ListingWithDetails | n
 
   const mine = data.mines as Record<string, unknown> | null;
   const harbour = data.harbours as Record<string, unknown> | null;
-  const seller = data.users as Record<string, unknown> | null;
+
+  // Fetch seller company name via admin client to bypass RLS
+  const { data: seller } = await admin
+    .from('users')
+    .select('company_name')
+    .eq('id', data.seller_id as string)
+    .single();
 
   return {
     ...data,
