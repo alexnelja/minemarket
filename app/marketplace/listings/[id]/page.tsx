@@ -121,8 +121,8 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
         <div className="grid grid-cols-2 gap-x-8 gap-y-4">
           <div>
             <p className="text-xs text-gray-500 mb-1">Source Mine</p>
-            <p className="text-sm text-white">{listing.mine_name}</p>
-            <p className="text-xs text-gray-500">{listing.mine_region}</p>
+            <p className="text-sm text-white">{listing.mine_name === 'Not specified' || listing.mine_name === 'Unknown' ? 'Source mine not specified' : listing.mine_name}</p>
+            {listing.mine_region && <p className="text-xs text-gray-500">{listing.mine_region}</p>}
           </div>
           <div>
             <p className="text-xs text-gray-500 mb-1">Loading Port</p>

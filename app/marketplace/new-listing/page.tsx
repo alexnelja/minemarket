@@ -42,6 +42,9 @@ export default function NewListingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [allMines, setAllMines] = useState<MineOption[]>([]);
   const [selectedMineId, setSelectedMineId] = useState<string | null>(null);
+  const [mineSearch, setMineSearch] = useState('');
+  const [manualPortId, setManualPortId] = useState<string | null>(null);
+  const [allHarbours, setAllHarbours] = useState<{ id: string; name: string; country: string }[]>([]);
 
   // Commodity search state
   const [commoditySearch, setCommoditySearch] = useState('');
@@ -65,36 +68,41 @@ export default function NewListingPage() {
       ? SPEC_FIELDS[commodity]
       : [];
 
-  // Fetch all mines for this user on mount
+  // Fetch all mines and loading harbours on mount
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      supabase
-        .from('mines')
-        .select('id, name, region, commodities, nearest_harbour_id, harbours(name)')
-        .eq('owner_id', user.id)
-        .then(({ data }) => {
-          if (!data) return;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const mines: MineOption[] = (data as any[]).map((m) => ({
-            id: m.id,
-            name: m.name,
-            region: m.region,
-            commodities: m.commodities ?? [],
-            nearest_harbour_id: m.nearest_harbour_id,
-            harbour_name: m.harbours && typeof m.harbours === 'object' && 'name' in m.harbours
-              ? (m.harbours as { name: string }).name
-              : null,
-          }));
-          setAllMines(mines);
-          // Auto-select first mine if only one
-          if (mines.length === 1) {
-            setSelectedMineId(mines[0].id);
-            setLoadingPortName(mines[0].harbour_name);
-          }
-        });
-    });
+
+    // Fetch all mines (not just owned — traders list on behalf of mines)
+    supabase
+      .from('mines')
+      .select('id, name, region, commodities, nearest_harbour_id, harbours(name)')
+      .limit(50)
+      .then(({ data }) => {
+        if (!data) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mines: MineOption[] = (data as any[]).map((m) => ({
+          id: m.id,
+          name: m.name,
+          region: m.region,
+          commodities: m.commodities ?? [],
+          nearest_harbour_id: m.nearest_harbour_id,
+          harbour_name: m.harbours && typeof m.harbours === 'object' && 'name' in m.harbours
+            ? (m.harbours as { name: string }).name
+            : null,
+        }));
+        setAllMines(mines);
+      });
+
+    // Fetch loading harbours for manual port selection
+    supabase
+      .from('harbours')
+      .select('id, name, country')
+      .in('type', ['loading', 'both'])
+      .order('name')
+      .limit(100)
+      .then(({ data }) => {
+        if (data) setAllHarbours(data);
+      });
   }, []);
 
   // Filter mines by selected commodity
@@ -104,9 +112,27 @@ export default function NewListingPage() {
 
   // When selected mine changes, update loading port name
   function handleMineSelect(mineId: string) {
+    if (mineId === '') {
+      setSelectedMineId(null);
+      setLoadingPortName(null);
+      return;
+    }
     setSelectedMineId(mineId);
+    setManualPortId(null);
     const mine = allMines.find((m) => m.id === mineId);
     setLoadingPortName(mine?.harbour_name ?? null);
+  }
+
+  // When manual port changes, update loading port name
+  function handleManualPortSelect(portId: string) {
+    if (portId === '') {
+      setManualPortId(null);
+      setLoadingPortName(null);
+      return;
+    }
+    setManualPortId(portId);
+    const port = allHarbours.find((h) => h.id === portId);
+    setLoadingPortName(port?.name ?? null);
   }
 
   // When commodity changes, reset mine selection if current mine doesn't support it
@@ -119,6 +145,7 @@ export default function NewListingPage() {
     if (mine && !mine.commodities.includes(type)) {
       setSelectedMineId(null);
       setLoadingPortName(null);
+      setManualPortId(null);
     }
   }
 
@@ -194,8 +221,8 @@ export default function NewListingPage() {
       setError('Please select a commodity type.');
       return;
     }
-    if (!selectedMineId) {
-      setError('Please select a mine.');
+    if (!selectedMineId && !manualPortId) {
+      setError('Please select a mine or a loading port.');
       return;
     }
     if (!price || !volume) {
@@ -258,9 +285,12 @@ export default function NewListingPage() {
         });
       }
 
-      const mine = allMines.find((m) => m.id === selectedMineId);
-      if (!mine) {
-        setError('Selected mine not found. Please try again.');
+      const mine = selectedMineId ? allMines.find((m) => m.id === selectedMineId) : null;
+
+      // Determine loading port: mine's nearest harbour or manually selected
+      const loadingPortId = mine?.nearest_harbour_id ?? manualPortId;
+      if (!loadingPortId) {
+        setError('Please select a loading port.');
         return;
       }
 
@@ -275,7 +305,7 @@ export default function NewListingPage() {
 
       const { error: insertError } = await supabase.from('listings').insert({
         seller_id: authUser.id,
-        source_mine_id: mine.id,
+        source_mine_id: mine?.id ?? null,
         commodity_type: commodity,
         commodity_subtype: selectedSubtype,
         spec_sheet,
@@ -283,7 +313,7 @@ export default function NewListingPage() {
         price_per_tonne: priceNum,
         currency,
         incoterms: selectedIncoterms,
-        loading_port_id: mine.nearest_harbour_id,
+        loading_port_id: loadingPortId,
         is_verified: false,
         allocation_mode: 'open',
         max_buyers: null,
@@ -377,17 +407,26 @@ export default function NewListingPage() {
           </div>
         )}
 
-        {/* Mine selector */}
-        {availableMines.length > 0 && (
+        {/* Mine selector (optional) */}
+        {commodity && (
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Mine</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Mine (optional)</label>
+            <input
+              type="text"
+              placeholder="Search mines..."
+              value={mineSearch}
+              onChange={(e) => setMineSearch(e.target.value)}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-500 mb-2"
+            />
             <select
               value={selectedMineId ?? ''}
               onChange={(e) => handleMineSelect(e.target.value)}
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gray-500"
             >
-              <option value="" disabled>Select a mine...</option>
-              {availableMines.map((m) => (
+              <option value="">None — I will select a loading port</option>
+              {availableMines
+                .filter((m) => !mineSearch || m.name.toLowerCase().includes(mineSearch.toLowerCase()) || m.region.toLowerCase().includes(mineSearch.toLowerCase()))
+                .map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name} — {m.region}{m.harbour_name ? ` (loading: ${m.harbour_name})` : ''}
                 </option>
@@ -398,9 +437,23 @@ export default function NewListingPage() {
             )}
           </div>
         )}
-        {commodity && availableMines.length === 0 && (
-          <div className="bg-yellow-900/20 border border-yellow-800/50 text-yellow-300 text-sm rounded-lg px-4 py-3">
-            No mines found for your account that produce {COMMODITY_CONFIG[commodity].label}. Please contact support.
+
+        {/* Loading port selector (shown when no mine is selected) */}
+        {commodity && !selectedMineId && (
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Loading Port</label>
+            <select
+              value={manualPortId ?? ''}
+              onChange={(e) => handleManualPortSelect(e.target.value)}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-gray-500"
+            >
+              <option value="" disabled>Select a loading port...</option>
+              {allHarbours.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name} ({h.country})
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
@@ -554,7 +607,7 @@ export default function NewListingPage() {
             </div>
           )}
           {!loadingPortName && selectedIncoterms.some((t) => INCOTERM_DESCRIPTIONS[t]?.context === 'loading') && (
-            <p className="mt-1 text-xs text-gray-500">Loading port will be determined by your mine&apos;s nearest harbour.</p>
+            <p className="mt-1 text-xs text-gray-500">Loading port will be determined by your selected mine or port.</p>
           )}
         </div>
 

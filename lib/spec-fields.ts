@@ -99,4 +99,8 @@ export const SPEC_LABELS: Record<string, string> = {
   tio2_pct: 'TiO\u2082 (%)',
   fe2o3_pct: 'Fe\u2082O\u2083 (%)',
   feedstock_type: 'Feedstock Type',
+  silt_content_pct: 'Silt Content (%)',
+  calcium_carbonate_pct: 'CaCO\u2083 (%)',
+  mgo_pct: 'MgO (%)',
+  cao_pct: 'CaO (%)',
 };

@@ -62,8 +62,8 @@ export async function getActiveListings(): Promise<ListingWithDetails[]> {
 
     return {
       ...l,
-      mine_name: (mine?.name as string) ?? 'Unknown',
-      mine_region: (mine?.region as string) ?? 'Unknown',
+      mine_name: (mine?.name as string) ?? 'Not specified',
+      mine_region: (mine?.region as string) ?? '',
       mine_location: parseGeoPoint(mine?.location) ?? { lng: 0, lat: 0 },
       harbour_name: (harbour?.name as string) ?? 'Unknown',
       seller_company: sellerMap.get(l.seller_id as string) ?? 'Unknown',
@@ -110,8 +110,8 @@ export async function getListingById(id: string): Promise<ListingWithDetails | n
 
   return {
     ...data,
-    mine_name: (mine?.name as string) ?? 'Unknown',
-    mine_region: (mine?.region as string) ?? 'Unknown',
+    mine_name: (mine?.name as string) ?? 'Not specified',
+    mine_region: (mine?.region as string) ?? '',
     mine_location: parseGeoPoint(mine?.location) ?? { lng: 0, lat: 0 },
     harbour_name: (harbour?.name as string) ?? 'Unknown',
     harbour_location: parseGeoPoint(harbour?.location) ?? { lng: 0, lat: 0 },

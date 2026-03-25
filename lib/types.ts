@@ -58,7 +58,7 @@ export interface Route {
 export interface Listing {
   id: string;
   seller_id: string;
-  source_mine_id: string;
+  source_mine_id: string | null;
   commodity_type: CommodityType;
   commodity_subtype: string | null;
   spec_sheet: Record<string, number>;

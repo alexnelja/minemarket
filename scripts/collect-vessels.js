@@ -12,7 +12,7 @@ const AIS_API_KEY = '8eac2f14c28e8efb19f8ddbec86fd11b632ebe49';
 const SUPABASE_URL = 'https://eawfhchyytnsewgnbznm.supabase.co';
 const SUPABASE_SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhd2ZoY2h5eXRuc2V3Z25iem5tIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzk5NjQ2OSwiZXhwIjoyMDg5NTcyNDY5fQ.57kJ6h03C6bm_z2kHuWazvZ88yiJNsU-qqsd6CF1iP0';
 
-const DURATION = parseInt(process.argv.find(a => a.startsWith('--duration='))?.split('=')[1] || '30') * 1000;
+const DURATION = parseInt(process.argv.find(a => a.startsWith('--duration='))?.split('=')[1] || '60') * 1000;
 
 // AIS ship type name lookup
 const AIS_SHIP_TYPES = {
