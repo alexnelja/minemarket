@@ -11,6 +11,8 @@ import { SUBTYPE_LABELS } from '@/lib/commodity-subtypes';
 import { MarineWeatherCard } from '@/app/vessels/marine-weather-card';
 import { COMMON_DESTINATIONS } from '@/lib/distance';
 import { calculateSeaRoute } from '@/lib/sea-routes';
+import { calculatePriceWaterfall } from '@/lib/price-waterfall';
+import { PriceWaterfallChart } from '@/app/components/price-waterfall-chart';
 
 interface ListingDetailPageProps {
   params: Promise<{ id: string }>;
@@ -232,6 +234,26 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
               );
             })}
           </div>
+        </CollapsibleSection>
+      )}
+
+      {/* Price Analysis */}
+      {listing.harbour_location && listing.harbour_location.lat !== 0 && listing.harbour_location.lng !== 0 && (
+        <CollapsibleSection title="PRICE ANALYSIS" subtitle="CIF to mine gate breakdown">
+          {COMMON_DESTINATIONS.slice(0, 1).map(dest => {
+            const waterfall = calculatePriceWaterfall({
+              cifPrice: listing.price_per_tonne * 1.12, // estimate CIF as 12% above FOB listing price
+              commodity: listing.commodity_type,
+              volumeTonnes: listing.volume_tonnes,
+              loadingPort: listing.harbour_name,
+              loadingPortCoords: { lat: listing.harbour_location.lat, lng: listing.harbour_location.lng },
+              destinationCoords: { lat: dest.lat, lng: dest.lng },
+              mineCoords: listing.mine_location,
+              mineName: listing.mine_name,
+              transportMode: 'rail',
+            });
+            return <PriceWaterfallChart key={dest.name} waterfall={waterfall} />;
+          })}
         </CollapsibleSection>
       )}
 
