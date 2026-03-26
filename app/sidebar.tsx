@@ -14,6 +14,7 @@ const marketItems = [
   { label: 'Map', href: '/map', icon: MapIcon },
   { label: 'Listings', href: '/marketplace', icon: MarketplaceIcon },
   { label: 'Prices', href: '/trading', icon: TradingIcon },
+  { label: 'Simulator', href: '/simulator', icon: SimulatorIcon },
 ];
 
 const secondaryItems = [
@@ -27,6 +28,7 @@ const mobileItems = [
   { label: 'Map', href: '/map', icon: MapIcon },
   { label: 'Listings', href: '/marketplace', icon: MarketplaceIcon },
   { label: 'Prices', href: '/trading', icon: TradingIcon },
+  { label: 'Simulator', href: '/simulator', icon: SimulatorIcon },
   { label: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
   { label: 'Vessels', href: '/vessels', icon: VesselsIcon },
   { label: 'Intelligence', href: '/intelligence', icon: IntelligenceIcon },
@@ -35,7 +37,7 @@ const mobileItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const isMarketActive = pathname.startsWith('/map') || pathname.startsWith('/marketplace') || pathname.startsWith('/trading');
+  const isMarketActive = pathname.startsWith('/map') || pathname.startsWith('/marketplace') || pathname.startsWith('/trading') || pathname.startsWith('/simulator');
   const [marketOpen, setMarketOpen] = useState(true);
 
   function isActive(href: string) {
@@ -243,6 +245,17 @@ function VesselsIcon({ active }: { active: boolean }) {
       <path d="M1 13H15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M4 13V11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M12 13V11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SimulatorIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={active ? 'text-white' : 'text-gray-500'}>
+      <rect x="1" y="2" width="14" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4 10V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M8 10V6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M12 10V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
