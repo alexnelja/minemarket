@@ -25,6 +25,62 @@
  * Implementation: Create lib/platform-derived-timelines.ts that queries
  * the DB and returns overrides for each segment. Merge with defaults
  * using: platformValue || industryAverage.
+ *
+ * PHASE 3 (FUTURE — with budget for external APIs):
+ *
+ * Replace estimates with real-time external data:
+ *
+ * 1. VESSEL ETA — Datalastic /vessel_pro endpoint ($29-49/mo starter)
+ *    Returns real ETA for specific vessels based on current position + speed.
+ *    Integration: When a deal has a nominated vessel (MMSI), fetch ETA from
+ *    Datalastic instead of calculating from distance/speed.
+ *    Replaces: ocean_transit segment (currently calculated from searoute distance ÷ 13kn)
+ *
+ * 2. PORT CONGESTION — Sinay Port Congestion API ($100+/mo)
+ *    Real-time congestion for 700+ ports with vessel queue depth and avg wait.
+ *    Integration: Replace our AIS-count-based congestion with Sinay's modeled data.
+ *    Replaces: vessel_waiting segment (currently AIS count → low/medium/high)
+ *    Also useful for: anchorage_wait at destination ports
+ *
+ * 3. BERTH SCHEDULING — DCSA Port Call Standard 2.0 (free open standard)
+ *    When adopted by Transnet/TPT, provides real berth slot data.
+ *    Integration: Query planned berth allocation for specific vessel calls.
+ *    Replaces: vessel_waiting + vessel_loading with actual scheduled times.
+ *    Status: DCSA 2.0 released Jan 2026, SA port adoption pending.
+ *
+ * 4. VESSEL TRACKING — Datalastic /vessel endpoint ($29-49/mo)
+ *    Real-time position, speed, course for nominated deal vessels.
+ *    Integration: Track deal shipments with actual vessel position.
+ *    Replaces: milestone-based tracking with continuous GPS tracking.
+ *    Also provides: current draft (indicates loading status).
+ *
+ * 5. HISTORICAL ROUTE TIMES — Datalastic /vessel_history ($29-49/mo)
+ *    Historical port-to-port transit times for vessel classes.
+ *    Integration: Query avg transit time for Supramax vessels on
+ *    Richards Bay → Qingdao route from historical AIS data.
+ *    Replaces: static 13kn average with route-specific historical averages.
+ *
+ * 6. WEATHER ROUTING — StormGlass.io ($50/mo) or Open-Meteo (free)
+ *    Wave/wind forecasts along the planned route.
+ *    Integration: Adjust ocean transit time ±10% based on weather conditions.
+ *    Enhancement: Flag when severe weather may delay a shipment.
+ *
+ * 7. CUSTOMS CLEARANCE — No API available for SARS (SA) or GACC (China).
+ *    Best approach: Platform-derived from deal data (Phase 2) or
+ *    partner with a digital clearing agent who has EDI access.
+ *
+ * Cost summary (all external APIs):
+ *   Datalastic Starter: $29-49/mo (vessel ETA, tracking, history)
+ *   Sinay congestion:   $100+/mo
+ *   StormGlass weather: $50/mo
+ *   DCSA Port Call:     Free (when ports adopt)
+ *   Total:              ~$180-200/mo for full dynamic timeline
+ *
+ * Priority order:
+ *   1. Datalastic vessel ETA (biggest accuracy improvement per $)
+ *   2. Sinay port congestion (vessel waiting is highest variance segment)
+ *   3. StormGlass weather routing (nice-to-have for transit accuracy)
+ *   4. DCSA port call (free but dependent on port adoption)
  */
 
 import type { GeoPoint } from './types';
