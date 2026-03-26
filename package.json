@@ -16,7 +16,11 @@
     "ingest:rails": "node scripts/ingest-africa-rails.js",
     "ingest:prices": "node scripts/ingest-commodity-prices.js",
     "ingest:lbma": "node scripts/ingest-lbma-prices.js",
-    "calculate:congestion": "node scripts/calculate-congestion.js"
+    "calculate:congestion": "node scripts/calculate-congestion.js",
+    "scrape:te": "node scripts/scrape-trading-economics.js",
+    "scrape:smm": "node scripts/scrape-smm-metals.js",
+    "ingest:fred": "node scripts/ingest-fred-prices.js",
+    "scrape:all": "node scripts/scrape-trading-economics.js && node scripts/scrape-smm-metals.js && node scripts/ingest-fred-prices.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.9.0",
