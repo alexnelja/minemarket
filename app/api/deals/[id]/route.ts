@@ -101,10 +101,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           }
         }
       } catch (err) {
-        // FX rate fetch failed — log but allow transition in v1
-        // In production, should block the transition per spec
         console.error('FX rate fetch failed:', err);
       }
+    }
+
+    if (dealCurrency !== 'USD' && !update.fx_rate_locked) {
+      return NextResponse.json({
+        error: 'Cannot lock deal terms: FX rate unavailable. Please try again shortly.',
+      }, { status: 503 });
     }
   }
 
@@ -118,10 +122,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     .from('deals')
     .update(update)
     .eq('id', id)
+    .eq('status', deal.status)  // Optimistic lock — fails if status changed
     .select()
     .single();
 
   if (updateError) {
+    // Could be a race condition (status changed between read and write)
+    if (updateError.code === 'PGRST116') {
+      return NextResponse.json({
+        error: 'Deal status changed — another update was made. Please refresh and try again.',
+      }, { status: 409 });
+    }
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 

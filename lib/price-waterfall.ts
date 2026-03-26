@@ -429,14 +429,11 @@ export function calculatePriceWaterfall(params: WaterfallParams): PriceWaterfall
     }
   }
 
-  // Update mine gate price after hedging costs
-  const fcaMineGateAfterHedge = subtotal;
-
   // Step 14: Margin (if production cost provided)
   let margin;
   if (productionCost !== undefined && productionCost > 0) {
-    const marginAmount = fcaMineGatePrice - productionCost;
-    const marginPct = (marginAmount / fcaMineGatePrice) * 100;
+    const marginAmount = subtotal - productionCost;
+    const marginPct = (marginAmount / subtotal) * 100;
     margin = { amount: marginAmount, percentage: marginPct };
     steps.push({
       label: 'Production cost',

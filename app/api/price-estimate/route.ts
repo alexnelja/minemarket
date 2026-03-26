@@ -5,6 +5,8 @@ import { getSubtypeByKey } from '@/lib/commodity-subtypes';
 import { parseGeoPoint } from '@/lib/geo';
 import type { CommodityType } from '@/lib/types';
 
+// NOTE: This is a public calculator endpoint with no user data — no auth required.
+// Rate limiting should be applied at the edge (e.g., Vercel middleware or WAF).
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
 
@@ -79,11 +81,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * Look up harbour coordinates by name from the harbours table.
- * Uses the admin client since this is a server-side API route.
+ * Harbours have public-read RLS — no need for service-role key.
  */
 async function lookupHarbourCoords(name: string): Promise<{ lat: number; lng: number } | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) return null;
 
   const supabase = createClient(url, key, {

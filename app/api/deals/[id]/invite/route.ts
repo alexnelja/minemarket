@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient, createAdminSupabaseClient } from '@/lib/supabase-server';
 
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 interface RouteContext { params: Promise<{ id: string }> }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -34,11 +38,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     body: JSON.stringify({
       from: 'MineMarket <onboarding@resend.dev>',
       to: [email],
-      subject: `${senderName} invited you to a deal on MineMarket`,
+      subject: `${escapeHtml(senderName)} invited you to a deal on MineMarket`,
       html: `
         <div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;background:#0f172a;color:#e2e8f0;padding:32px;border-radius:12px;">
           <h2 style="color:#f59e0b;font-size:18px;margin:0 0 8px;">You've been invited to a deal</h2>
-          <p style="color:#94a3b8;font-size:13px;margin:0 0 20px;">${senderName} wants to work with you on a ${deal.commodity_type} deal through MineMarket.</p>
+          <p style="color:#94a3b8;font-size:13px;margin:0 0 20px;">${escapeHtml(senderName)} wants to work with you on a ${escapeHtml(deal.commodity_type)} deal through MineMarket.</p>
           <a href="https://dashboard-five-cyan-36.vercel.app/deals/${dealId}" style="display:block;text-align:center;background:#f59e0b;color:#000;font-weight:600;font-size:14px;padding:12px;border-radius:8px;text-decoration:none;">View Deal</a>
           <p style="color:#475569;font-size:11px;text-align:center;margin-top:24px;">MineMarket · The deal workspace for commodity traders</p>
         </div>
