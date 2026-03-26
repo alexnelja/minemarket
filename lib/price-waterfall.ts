@@ -74,6 +74,42 @@ const SURVEY_SAMPLING_PER_TONNE = 0.70;    // Surveyor + sampling at port
 const INSURANCE_RATE = 0.0015;              // 0.15% of CIF value (marine cargo)
 const WEIGHBRIDGE_PER_TONNE = 0.27;        // Per-truck weighbridge fee
 
+// FX Hedging costs (SA perspective, based on interest rate differential)
+// SARB repo rate ~7.75% vs Fed rate ~4.5% = ~3.25% annualized carry cost
+// For 3-month forward: ~0.8% premium, 6-month: ~1.6%, 12-month: ~3.0%
+export const FX_HEDGE_COSTS = {
+  spot: { months: 0, annualizedPct: 0, label: 'No hedge (spot)' },
+  forward_3m: { months: 3, annualizedPct: 3.25, label: '3-month FX forward' },
+  forward_6m: { months: 6, annualizedPct: 3.25, label: '6-month FX forward' },
+  forward_12m: { months: 12, annualizedPct: 3.25, label: '12-month FX forward' },
+  option_3m: { months: 3, annualizedPct: 4.50, label: '3-month FX option (floor/ceiling)' },
+  option_6m: { months: 6, annualizedPct: 5.00, label: '6-month FX option' },
+  collar_3m: { months: 3, annualizedPct: 1.50, label: '3-month zero-cost collar' },
+} as const;
+
+export type FxHedgeType = keyof typeof FX_HEDGE_COSTS;
+
+// Commodity price hedging (futures/swaps where available)
+export const COMMODITY_HEDGE_COSTS: Record<string, {
+  available: boolean;
+  exchange: string;
+  instrument: string;
+  costPct: number; // annual cost as % of notional
+  note: string;
+}> = {
+  iron_ore: { available: true, exchange: 'CME/SGX', instrument: '62% Fe futures', costPct: 0.5, note: 'Liquid market — SGX TSI Iron Ore 62% futures' },
+  coal: { available: true, exchange: 'CME/ICE', instrument: 'API4 FOB RB futures', costPct: 0.5, note: 'Richards Bay FOB — ICE API4 contract' },
+  gold: { available: true, exchange: 'CME/JSE', instrument: 'Gold futures', costPct: 0.3, note: 'Very liquid — CME COMEX or JSE' },
+  platinum: { available: true, exchange: 'CME/JSE', instrument: 'Platinum futures', costPct: 0.5, note: 'CME NYMEX platinum futures' },
+  copper: { available: true, exchange: 'LME/CME', instrument: 'Copper futures', costPct: 0.3, note: 'Very liquid — LME copper' },
+  nickel: { available: true, exchange: 'LME', instrument: 'Nickel futures', costPct: 0.5, note: 'LME nickel (volatility higher)' },
+  chrome: { available: false, exchange: 'OTC', instrument: 'Ferrochrome swaps', costPct: 1.5, note: 'No exchange-traded futures — OTC swaps via banks, less liquid' },
+  manganese: { available: false, exchange: 'OTC', instrument: 'Mn ore swaps', costPct: 1.5, note: 'No exchange-traded futures — OTC swaps, thin market' },
+  vanadium: { available: false, exchange: 'OTC', instrument: 'V2O5 swaps', costPct: 2.0, note: 'Very illiquid — OTC only, few counterparties' },
+  titanium: { available: false, exchange: 'None', instrument: 'None', costPct: 0, note: 'No hedging instruments available — price risk unhedgeable' },
+  aggregates: { available: false, exchange: 'None', instrument: 'None', costPct: 0, note: 'Domestic market — no hedging needed' },
+};
+
 export interface WaterfallParams {
   cifPrice: number;             // Known CIF index price ($/t)
   commodity: CommodityType;
@@ -86,6 +122,10 @@ export interface WaterfallParams {
   transportMode?: 'rail' | 'road';
   storageDays?: number;          // Days at port terminal before loading
   productionCost?: number;       // Optional: mine production cost ($/t)
+  fxHedge?: FxHedgeType;         // FX hedging strategy
+  hedgeCommodityPrice?: boolean; // Whether to hedge commodity price
+  dealDurationMonths?: number;   // Deal duration for hedge cost calculation
+  dealCurrency?: string;         // USD, ZAR, EUR
 }
 
 export function calculatePriceWaterfall(params: WaterfallParams): PriceWaterfall {
@@ -93,6 +133,8 @@ export function calculatePriceWaterfall(params: WaterfallParams): PriceWaterfall
     cifPrice, commodity, volumeTonnes, loadingPort, loadingPortCoords,
     destinationCoords, mineCoords, transportMode = 'rail',
     storageDays = 0, productionCost,
+    fxHedge = 'spot', hedgeCommodityPrice = false,
+    dealDurationMonths = 3, dealCurrency = 'USD',
   } = params;
 
   const steps: WaterfallStep[] = [];
@@ -335,6 +377,60 @@ export function calculatePriceWaterfall(params: WaterfallParams): PriceWaterfall
     category: 'price',
     note: 'Ex-Works price at mine gate',
   });
+
+  // --- HEDGING COSTS ---
+
+  // FX Hedging (relevant when deal is in ZAR but settled in USD, or vice versa)
+  const fxHedgeConfig = FX_HEDGE_COSTS[fxHedge];
+  if (fxHedge !== 'spot' && dealCurrency !== 'USD') {
+    const hedgeDurationMonths = Math.min(fxHedgeConfig.months, dealDurationMonths);
+    const fxHedgeCost = cifPrice * (fxHedgeConfig.annualizedPct / 100) * (hedgeDurationMonths / 12);
+    subtotal -= fxHedgeCost;
+    steps.push({
+      label: `FX hedge (${fxHedgeConfig.label})`,
+      amount: -fxHedgeCost,
+      subtotal,
+      category: 'other',
+      note: `${fxHedgeConfig.annualizedPct}% p.a. × ${hedgeDurationMonths}m — USD/ZAR interest rate differential`,
+      editable: true,
+    });
+  } else if (fxHedge === 'spot' && dealCurrency !== 'USD') {
+    steps.push({
+      label: 'FX exposure (unhedged)',
+      amount: 0,
+      subtotal,
+      category: 'other',
+      note: `⚠ ${dealCurrency}/USD unhedged — exposed to ~15% annual ZAR volatility`,
+    });
+  }
+
+  // Commodity Price Hedging
+  const commodityHedge = COMMODITY_HEDGE_COSTS[commodity];
+  if (hedgeCommodityPrice && commodityHedge) {
+    if (commodityHedge.available) {
+      const hedgeCost = cifPrice * (commodityHedge.costPct / 100) * (dealDurationMonths / 12);
+      subtotal -= hedgeCost;
+      steps.push({
+        label: `Price hedge (${commodityHedge.instrument})`,
+        amount: -hedgeCost,
+        subtotal,
+        category: 'other',
+        note: `${commodityHedge.exchange} — ${commodityHedge.costPct}% p.a. × ${dealDurationMonths}m. ${commodityHedge.note}`,
+        editable: true,
+      });
+    } else {
+      steps.push({
+        label: `Price hedge (${commodityHedge.instrument || 'unavailable'})`,
+        amount: 0,
+        subtotal,
+        category: 'other',
+        note: `⚠ ${commodityHedge.note}`,
+      });
+    }
+  }
+
+  // Update mine gate price after hedging costs
+  const fcaMineGateAfterHedge = subtotal;
 
   // Step 14: Margin (if production cost provided)
   let margin;
