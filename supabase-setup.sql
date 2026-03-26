@@ -1,5 +1,22 @@
 -- Mining Materials Aggregator Platform — Database Schema
 -- Run this in your Supabase SQL Editor
+--
+-- IMPORTANT: This is the ORIGINAL schema from Plan 1.
+-- It does NOT include changes from migrations in supabase/migrations/.
+-- To create the full database, run this file THEN all migrations in order.
+--
+-- Changes made by migrations include:
+-- - 5 new commodity types (platinum, gold, copper, vanadium, titanium)
+-- - 5 new document types (lbma_certificate, lme_warrant, etc.)
+-- - source_mine_id made nullable on listings
+-- - updated_at columns + triggers on 6 tables
+-- - CHECK constraints, indexes, RLS policies
+-- - New tables: vessel_positions, port_congestion, rail_stations, rail_segments,
+--   commodity_prices, deal_messages, kyc_documents, verification_requests, deal_simulations
+-- - Columns: view_count, commodity_subtype, pricing_unit, price_confidence, price_breakdown,
+--   source, source_id, last_verified_at, etc.
+--
+-- See supabase/migrations/ for the complete list of schema changes.
 
 -- 0. Enable PostGIS extension
 CREATE EXTENSION IF NOT EXISTS postgis;

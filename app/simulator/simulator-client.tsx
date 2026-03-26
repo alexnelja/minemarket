@@ -5,7 +5,8 @@ import type { GeoPoint, CommodityType } from '@/lib/types';
 import { COMMODITY_CONFIG, COMMODITY_PRICING } from '@/lib/types';
 import type { DealSimulation, TradePoint, ForwardWaterfallStep } from '@/lib/forward-waterfall';
 import type { OptimizationResult, RouteOption } from '@/lib/route-optimizer';
-import { QUALITY_BADGES, DATA_SOURCES, type DataQuality } from '@/lib/data-sources';
+import { QUALITY_BADGES, DATA_SOURCES, type DataQuality, QUALITY_VARIANT } from '@/lib/data-sources';
+import { QualityBadge } from '@/app/components/quality-badge';
 import { calculateTimeline } from '@/lib/supply-chain-timeline';
 import type { SupplyChainTimeline } from '@/lib/supply-chain-timeline';
 import { TimelineVisual } from './timeline-visual';
@@ -652,9 +653,10 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
                               ${step.amount.toFixed(2)}
                             </span>
                             {step.quality && (
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${QUALITY_BADGES[step.quality as DataQuality].bgColor} ${QUALITY_BADGES[step.quality as DataQuality].color} ${QUALITY_BADGES[step.quality as DataQuality].borderColor}`}>
-                                {QUALITY_BADGES[step.quality as DataQuality].label}
-                              </span>
+                              <QualityBadge
+                                label={QUALITY_BADGES[step.quality as DataQuality].label}
+                                variant={QUALITY_VARIANT[step.quality as DataQuality]}
+                              />
                             )}
                           </div>
                         </div>
@@ -841,9 +843,10 @@ function DataSourcesPanel({ steps }: { steps: DealSimulation['steps'] }) {
       <div className="px-6 pb-5 space-y-2">
         {uniqueSources.map(source => (
           <div key={source.id} className="flex items-center gap-3">
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full border flex-shrink-0 ${QUALITY_BADGES[source.quality].bgColor} ${QUALITY_BADGES[source.quality].color} ${QUALITY_BADGES[source.quality].borderColor}`}>
-              {QUALITY_BADGES[source.quality].label}
-            </span>
+            <QualityBadge
+              label={QUALITY_BADGES[source.quality].label}
+              variant={QUALITY_VARIANT[source.quality]}
+            />
             <div className="flex-1 min-w-0">
               <span className="text-xs text-white">{source.name}</span>
               {source.lastUpdated && (

@@ -19,6 +19,14 @@ export const QUALITY_BADGES: Record<DataQuality, { label: string; color: string;
   placeholder: { label: 'Placeholder', color: 'text-red-400', bgColor: 'bg-red-500/10', borderColor: 'border-red-500/20' },
 };
 
+// Map DataQuality → QualityBadge variant for use with <QualityBadge>
+export const QUALITY_VARIANT: Record<DataQuality, 'green' | 'blue' | 'amber' | 'red'> = {
+  published: 'green',
+  calculated: 'blue',
+  estimated: 'amber',
+  placeholder: 'red',
+};
+
 export const DATA_SOURCES: Record<string, DataSource> = {
   // Commodity prices
   lbma_gold: { id: 'lbma_gold', name: 'LBMA Gold Price', quality: 'published', url: 'https://www.lbma.org.uk/prices-and-data', updateFrequency: 'daily', note: 'Official daily fix — benchmark for global gold trading' },
