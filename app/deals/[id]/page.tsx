@@ -15,6 +15,7 @@ import { DealProgress } from './deal-progress';
 import { DealTabs } from './deal-tabs';
 import { DealMessages } from './deal-messages';
 import { InviteCounterparty } from './invite-counterparty';
+import { DocumentFlow } from './document-flow';
 import { getTrustScoreForUser } from '@/lib/trust-queries';
 import { compareSpecs } from '@/lib/spec-comparison';
 import type { SpecTolerance, PriceAdjustmentRule } from '@/lib/spec-comparison';
@@ -230,6 +231,11 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
         }
         documentsContent={
           <div className="space-y-6">
+            <DocumentFlow
+              dealStatus={deal.status}
+              documents={documents}
+              commodity={deal.commodity_type}
+            />
             <DocumentChecklist
               commodity={deal.commodity_type}
               documents={documents}
