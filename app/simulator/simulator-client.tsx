@@ -1,166 +1,177 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { MineWithGeo, GeoPoint, CommodityType } from '@/lib/types';
-import { COMMODITY_CONFIG } from '@/lib/types';
-import type { DealSimulation, TradePoint } from '@/lib/forward-waterfall';
-import { CORRIDOR_POINTS, getValidSellPoints } from '@/lib/forward-waterfall';
-import type { FxHedgeType } from '@/lib/price-waterfall';
-import { COMMON_DESTINATIONS } from '@/lib/distance';
+import type { GeoPoint, CommodityType } from '@/lib/types';
+import { COMMODITY_CONFIG, COMMODITY_PRICING } from '@/lib/types';
+import type { DealSimulation, TradePoint, ForwardWaterfallStep } from '@/lib/forward-waterfall';
 import type { OptimizationResult, RouteOption } from '@/lib/route-optimizer';
 import { QUALITY_BADGES, DATA_SOURCES, type DataQuality } from '@/lib/data-sources';
-import { RouteTable } from './route-table';
 
-interface PortOption {
-  id: string;
-  name: string;
-  location: GeoPoint;
-  country: string;
-}
+// ── SA-focused defaults ─────────────────────────────────────────────────────
+
+const PRIMARY_COMMODITIES: CommodityType[] = ['chrome', 'manganese'];
+const ALL_COMMODITIES: CommodityType[] = ['chrome', 'manganese', 'iron_ore', 'coal', 'platinum', 'gold', 'copper', 'vanadium', 'titanium', 'aggregates'];
+
+const SA_QUICK_ROUTES = [
+  { label: 'Steelpoort → RB → Qingdao', commodity: 'chrome' as CommodityType, mine: 'Steelpoort Chrome', port: 'Richards Bay', dest: 'Qingdao, China', destCoords: { lat: 36.067, lng: 120.383 }, mineCoords: { lat: -24.69, lng: 30.19 }, portCoords: { lat: -28.801, lng: 32.038 } },
+  { label: 'Hotazel → Saldanha → Qingdao', commodity: 'manganese' as CommodityType, mine: 'Hotazel Manganese', port: 'Saldanha Bay', dest: 'Qingdao, China', destCoords: { lat: 36.067, lng: 120.383 }, mineCoords: { lat: -27.24, lng: 22.95 }, portCoords: { lat: -33.004, lng: 17.938 } },
+  { label: 'Steelpoort → RB → Mumbai', commodity: 'chrome' as CommodityType, mine: 'Steelpoort Chrome', port: 'Richards Bay', dest: 'Mumbai, India', destCoords: { lat: 18.940, lng: 72.840 }, mineCoords: { lat: -24.69, lng: 30.19 }, portCoords: { lat: -28.801, lng: 32.038 } },
+  { label: 'Steelpoort → RB → Rotterdam', commodity: 'chrome' as CommodityType, mine: 'Steelpoort Chrome', port: 'Richards Bay', dest: 'Rotterdam, NL', destCoords: { lat: 51.953, lng: 4.133 }, mineCoords: { lat: -24.69, lng: 30.19 }, portCoords: { lat: -28.801, lng: 32.038 } },
+  { label: 'Hotazel → PE → Qingdao', commodity: 'manganese' as CommodityType, mine: 'Hotazel Manganese', port: 'Port Elizabeth', dest: 'Qingdao, China', destCoords: { lat: 36.067, lng: 120.383 }, mineCoords: { lat: -27.24, lng: 22.95 }, portCoords: { lat: -33.768, lng: 25.629 } },
+];
+
+// Simplified corridor — 5 points (removed stockpile for clarity)
+const VISUAL_CORRIDOR: { key: TradePoint; label: string; shortLabel: string }[] = [
+  { key: 'mine_gate', label: 'Mine Gate (EXW)', shortLabel: 'Mine Gate' },
+  { key: 'port_gate', label: 'Port Gate (FCA)', shortLabel: 'Port Gate' },
+  { key: 'fob', label: 'FOB', shortLabel: 'FOB' },
+  { key: 'cfr', label: 'CFR', shortLabel: 'CFR' },
+  { key: 'cif', label: 'CIF', shortLabel: 'CIF' },
+];
+
+// Category display names for grouped breakdown
+const CATEGORY_LABELS: Record<string, string> = {
+  inland: 'Mine to Port',
+  port: 'Port Costs',
+  tax: 'Taxes & Fees',
+  freight: 'Ocean Freight',
+  finance: 'Hedging & Financing',
+  cost: 'Other Costs',
+};
+
+const CATEGORY_ORDER = ['inland', 'port', 'tax', 'freight', 'finance', 'cost'];
+
+const INPUT_CLS = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-white/20';
+
+// ── Component Props ─────────────────────────────────────────────────────────
 
 interface SimulatorClientProps {
-  mines: MineWithGeo[];
-  loadingPorts: PortOption[];
-  destinationPorts: PortOption[];
+  mines: { id: string; name: string; commodities?: CommodityType[]; location?: GeoPoint }[];
+  loadingPorts: { id: string; name: string; location: GeoPoint; country: string }[];
+  destinationPorts: { id: string; name: string; location: GeoPoint; country: string }[];
   indexPrices: Record<string, number>;
 }
 
-const FX_HEDGE_OPTIONS: { value: FxHedgeType; label: string }[] = [
-  { value: 'spot', label: 'No hedge (spot)' },
-  { value: 'forward_3m', label: '3m forward' },
-  { value: 'forward_6m', label: '6m forward' },
-  { value: 'forward_12m', label: '12m forward' },
-  { value: 'option_3m', label: '3m option' },
-  { value: 'option_6m', label: '6m option' },
-  { value: 'collar_3m', label: '3m zero-cost collar' },
-];
+// ── Main Component ──────────────────────────────────────────────────────────
 
-const COMMODITIES = Object.entries(COMMODITY_CONFIG).map(([key, config]) => ({
-  value: key as CommodityType,
-  label: config.label,
-}));
-
-// Buy points: all points except cif (can't sell from cif, no corridor after)
-const BUY_POINT_OPTIONS = CORRIDOR_POINTS.filter(p => p.key !== 'cif');
-
-// Fallback destinations when no destination ports in DB
-const FALLBACK_DESTINATIONS: PortOption[] = COMMON_DESTINATIONS.map((d, i) => ({
-  id: `dest-${i}`,
-  name: d.name,
-  location: { lat: d.lat, lng: d.lng },
-  country: d.name.split(', ').pop() || '',
-}));
-
-// SA loading port fallbacks
-const FALLBACK_LOADING_PORTS: PortOption[] = [
-  { id: 'rb', name: 'Richards Bay', location: { lat: -28.801, lng: 32.038 }, country: 'South Africa' },
-  { id: 'sb', name: 'Saldanha Bay', location: { lat: -33.004, lng: 17.938 }, country: 'South Africa' },
-  { id: 'dbn', name: 'Durban', location: { lat: -29.868, lng: 31.048 }, country: 'South Africa' },
-  { id: 'pe', name: 'Port Elizabeth', location: { lat: -33.756, lng: 25.627 }, country: 'South Africa' },
-  { id: 'map', name: 'Maputo', location: { lat: -25.966, lng: 32.589 }, country: 'Mozambique' },
-];
-
-export function SimulatorClient({ mines, loadingPorts, destinationPorts, indexPrices }: SimulatorClientProps) {
-  // Form state
-  const [commodity, setCommodity] = useState<CommodityType>('chrome');
+export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
+  // State: corridor selection
+  const [selectionPhase, setSelectionPhase] = useState<'buy' | 'sell' | 'done'>('done');
   const [buyPoint, setBuyPoint] = useState<TradePoint>('mine_gate');
   const [sellPoint, setSellPoint] = useState<TradePoint>('cif');
-  const [buyPrice, setBuyPrice] = useState(151);
-  const [volume, setVolume] = useState(15000);
-  const [selectedMineId, setSelectedMineId] = useState('');
-  const [selectedPortName, setSelectedPortName] = useState('Richards Bay');
-  const [selectedDestName, setSelectedDestName] = useState('Qingdao, China');
-  const [transportMode, setTransportMode] = useState<'rail' | 'road'>('rail');
-  const [fxHedge, setFxHedge] = useState<FxHedgeType>('spot');
-  const [hedgeCommodity, setHedgeCommodity] = useState(false);
-  const [lcCostPct, setLcCostPct] = useState(1.0);
-  const [interestRatePct, setInterestRatePct] = useState(11.5);
-  const [creditInsurancePct, setCreditInsurancePct] = useState(0.5);
-  const [financingEnabled, setFinancingEnabled] = useState(false);
-  const [indexPriceOverride, setIndexPriceOverride] = useState<string>('');
 
-  // Result state
+  // State: trade params
+  const [commodity, setCommodity] = useState<CommodityType>('chrome');
+  const [buyPrice, setBuyPrice] = useState<string>('151');
+  const [volume, setVolume] = useState<string>('15000');
+  const [indexPriceOverride, setIndexPriceOverride] = useState<string>('');
+  const [showAllCommodities, setShowAllCommodities] = useState(false);
+
+  // State: route
+  const [selectedRoute, setSelectedRoute] = useState<typeof SA_QUICK_ROUTES[0] | null>(SA_QUICK_ROUTES[0]);
+  const [customRoute, setCustomRoute] = useState(false);
+
+  // State: hedging & financing
+  const [fxHedge, setFxHedge] = useState('spot');
+
+  // State: results
   const [simulation, setSimulation] = useState<DealSimulation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Route optimization state
+  // State: route optimization
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
   const [optimizing, setOptimizing] = useState(false);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Resolve ports/destinations with fallbacks
-  const effectiveLoadingPorts = loadingPorts.length > 0 ? loadingPorts : FALLBACK_LOADING_PORTS;
-  const effectiveDestinations = destinationPorts.length > 0 ? destinationPorts : FALLBACK_DESTINATIONS;
-
-  // Filter mines by commodity
-  const filteredMines = mines.filter(m => m.commodities?.includes(commodity));
-
-  // Current selections
-  const selectedPort = effectiveLoadingPorts.find(p => p.name === selectedPortName) || effectiveLoadingPorts[0];
-  const selectedDest = effectiveDestinations.find(d => d.name === selectedDestName) || effectiveDestinations[0];
-  const selectedMine = filteredMines.find(m => m.id === selectedMineId);
-
+  // Resolved index price
   const currentIndexPrice = indexPriceOverride ? parseFloat(indexPriceOverride) : (indexPrices[commodity] || 0);
 
-  // Valid sell points based on current buy point
-  const validSellPoints = getValidSellPoints(buyPoint);
-  const sellPointOptions = CORRIDOR_POINTS.filter(p => validSellPoints.includes(p.key));
-
-  // Ensure sellPoint is still valid when buyPoint changes
+  // Auto-set index price display when commodity changes
   useEffect(() => {
-    if (!validSellPoints.includes(sellPoint)) {
-      setSellPoint(validSellPoints[validSellPoints.length - 1] || 'cif');
+    setIndexPriceOverride('');
+  }, [commodity]);
+
+  // Handle corridor point click
+  function handleCorridorClick(point: TradePoint) {
+    const pointIndex = VISUAL_CORRIDOR.findIndex(p => p.key === point);
+
+    if (selectionPhase === 'buy') {
+      setBuyPoint(point);
+      setSellPoint(null as unknown as TradePoint);
+      setSelectionPhase('sell');
+      setSimulation(null);
+    } else if (selectionPhase === 'sell') {
+      const buyIdx = VISUAL_CORRIDOR.findIndex(p => p.key === buyPoint);
+      if (pointIndex > buyIdx) {
+        setSellPoint(point);
+        setSelectionPhase('done');
+      }
+    } else {
+      // Already done — reset and start over
+      setBuyPoint(point);
+      setSellPoint(null as unknown as TradePoint);
+      setSelectionPhase('sell');
+      setSimulation(null);
     }
-  }, [buyPoint, sellPoint, validSellPoints]);
+  }
 
-  // Determine if inland transport fields are needed
-  const needsInland = buyPoint === 'mine_gate';
-  const needsOcean = sellPoint === 'cfr' || sellPoint === 'cif';
+  // Reset corridor
+  function resetCorridor() {
+    setBuyPoint(null as unknown as TradePoint);
+    setSellPoint(null as unknown as TradePoint);
+    setSelectionPhase('buy');
+    setSimulation(null);
+  }
 
+  // Select quick route
+  function selectQuickRoute(route: typeof SA_QUICK_ROUTES[0]) {
+    setSelectedRoute(route);
+    setCommodity(route.commodity);
+    setCustomRoute(false);
+    setBuyPoint('mine_gate');
+    setSellPoint('cif');
+    setSelectionPhase('done');
+  }
+
+  // Run simulation
   const runSimulation = useCallback(async () => {
-    if (!selectedPort || !selectedDest || buyPrice <= 0) return;
+    if (!buyPoint || !sellPoint || !buyPrice || parseFloat(buyPrice) <= 0) return;
 
     setLoading(true);
     setError(null);
 
-    const qp = new URLSearchParams({
+    const route = selectedRoute;
+    const params = new URLSearchParams({
       commodity,
       buy_point: buyPoint,
       sell_point: sellPoint,
-      buy_price: buyPrice.toString(),
-      volume: volume.toString(),
-      loading_port: selectedPort.name,
-      loading_lat: selectedPort.location.lat.toString(),
-      loading_lng: selectedPort.location.lng.toString(),
-      dest_lat: selectedDest.location.lat.toString(),
-      dest_lng: selectedDest.location.lng.toString(),
-      destination_name: selectedDest.name,
-      transport_mode: transportMode,
+      buy_price: buyPrice,
+      volume: volume || '15000',
+      loading_port: route?.port || 'Richards Bay',
+      loading_lat: String(route?.portCoords?.lat || -28.801),
+      loading_lng: String(route?.portCoords?.lng || 32.038),
+      dest_lat: String(route?.destCoords?.lat || 36.067),
+      dest_lng: String(route?.destCoords?.lng || 120.383),
+      destination_name: route?.dest || 'Qingdao, China',
+      transport_mode: 'rail',
       fx_hedge: fxHedge,
-      hedge_commodity: hedgeCommodity.toString(),
     });
 
-    if (selectedMine) {
-      qp.set('mine_lat', selectedMine.location.lat.toString());
-      qp.set('mine_lng', selectedMine.location.lng.toString());
-      qp.set('mine_name', selectedMine.name);
+    if (route?.mineCoords) {
+      params.set('mine_lat', String(route.mineCoords.lat));
+      params.set('mine_lng', String(route.mineCoords.lng));
+      params.set('mine_name', route.mine || '');
     }
 
     if (currentIndexPrice > 0) {
-      qp.set('index_cif_price', currentIndexPrice.toString());
-    }
-
-    if (financingEnabled) {
-      qp.set('lc_cost_pct', lcCostPct.toString());
-      qp.set('interest_rate_pct', interestRatePct.toString());
-      qp.set('credit_insurance_pct', creditInsurancePct.toString());
+      params.set('index_cif_price', String(currentIndexPrice));
     }
 
     try {
-      const res = await fetch(`/api/deal-simulator?${qp.toString()}`);
+      const res = await fetch(`/api/deal-simulator?${params.toString()}`);
       if (!res.ok) {
         const body = await res.json();
         setError(body.error || 'Simulation failed');
@@ -173,18 +184,19 @@ export function SimulatorClient({ mines, loadingPorts, destinationPorts, indexPr
     } finally {
       setLoading(false);
     }
-  }, [commodity, buyPoint, sellPoint, buyPrice, volume, selectedPort, selectedDest, selectedMine, transportMode, fxHedge, hedgeCommodity, financingEnabled, lcCostPct, interestRatePct, creditInsurancePct, currentIndexPrice]);
+  }, [buyPoint, sellPoint, buyPrice, volume, commodity, selectedRoute, currentIndexPrice, fxHedge]);
 
-  // Debounced auto-run
+  // Debounced auto-run when corridor is set
   useEffect(() => {
+    if (selectionPhase !== 'done' || !buyPrice || parseFloat(buyPrice) <= 0) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(runSimulation, 400);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [runSimulation]);
+  }, [selectionPhase, runSimulation, buyPrice]);
 
   // Route optimization
   const runOptimization = useCallback(async () => {
-    if (buyPrice <= 0) return;
+    if (!buyPrice || parseFloat(buyPrice) <= 0) return;
 
     setOptimizing(true);
     setOptimizeError(null);
@@ -193,20 +205,20 @@ export function SimulatorClient({ mines, loadingPorts, destinationPorts, indexPr
       commodity,
       buy_point: buyPoint,
       sell_point: sellPoint,
-      buy_price: buyPrice.toString(),
-      volume: volume.toString(),
+      buy_price: buyPrice,
+      volume: volume || '15000',
       fx_hedge: fxHedge,
-      hedge_commodity: hedgeCommodity.toString(),
     });
 
-    if (selectedMine) {
-      qp.set('mine_lat', selectedMine.location.lat.toString());
-      qp.set('mine_lng', selectedMine.location.lng.toString());
-      qp.set('mine_name', selectedMine.name);
+    const route = selectedRoute;
+    if (route?.mineCoords) {
+      qp.set('mine_lat', String(route.mineCoords.lat));
+      qp.set('mine_lng', String(route.mineCoords.lng));
+      qp.set('mine_name', route.mine || '');
     }
 
     if (currentIndexPrice > 0) {
-      qp.set('index_price', currentIndexPrice.toString());
+      qp.set('index_price', String(currentIndexPrice));
     }
 
     try {
@@ -223,572 +235,488 @@ export function SimulatorClient({ mines, loadingPorts, destinationPorts, indexPr
     } finally {
       setOptimizing(false);
     }
-  }, [commodity, buyPoint, sellPoint, buyPrice, volume, selectedMine, fxHedge, hedgeCommodity, currentIndexPrice]);
+  }, [commodity, buyPoint, sellPoint, buyPrice, volume, selectedRoute, fxHedge, currentIndexPrice]);
 
-  // When user selects a route from the optimization table, populate the form
+  // Handle selecting an optimized route
   const handleSelectRoute = useCallback((route: RouteOption) => {
-    setSelectedPortName(route.loadingPort);
-    if (route.destination !== 'N/A') {
-      setSelectedDestName(route.destination);
+    // Find matching SA route or keep current
+    const match = SA_QUICK_ROUTES.find(r => r.port === route.loadingPort);
+    if (match) {
+      selectQuickRoute(match);
     }
-    setTransportMode(route.transportMode);
   }, []);
 
-  // Reset mine selection when commodity changes
-  useEffect(() => {
-    setSelectedMineId('');
-  }, [commodity]);
+  // Corridor rendering helpers
+  const buyIdx = buyPoint ? VISUAL_CORRIDOR.findIndex(p => p.key === buyPoint) : -1;
+  const sellIdx = sellPoint ? VISUAL_CORRIDOR.findIndex(p => p.key === sellPoint) : -1;
 
-  const categoryColors: Record<string, string> = {
-    price: 'bg-white',
-    freight: 'bg-blue-500',
-    port: 'bg-purple-500',
-    tax: 'bg-red-500',
-    inland: 'bg-amber-500',
-    finance: 'bg-cyan-500',
-    cost: 'bg-gray-500',
-  };
+  // Group simulation steps by category for the breakdown
+  const groupedSteps = simulation ? groupStepsByCategory(simulation.steps) : [];
 
-  const categoryLabels: Record<string, string> = {
-    price: 'Price level',
-    freight: 'Freight & insurance',
-    port: 'Port costs',
-    tax: 'Tax & royalties',
-    inland: 'Inland transport',
-    finance: 'Financing & hedging',
-  };
-
-  // Labels for buy point in the price input
-  const buyPointLabel = CORRIDOR_POINTS.find(p => p.key === buyPoint)?.label || buyPoint;
+  const vol = parseInt(volume) || 15000;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      {/* Header */}
+    <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Deal Simulator</h1>
-        <p className="text-sm text-gray-400 mt-1">Forward waterfall: flexible buy/sell points along the supply chain corridor</p>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Deal Simulator</h1>
+        <p className="text-gray-400 text-sm mt-1">Click the pipeline to set your buy and sell points.</p>
       </div>
 
-      {/* Input Form */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5">
-        {/* Row 1: Buy Point + Sell Point + Price + Volume */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">Buy at</label>
-            <select
-              value={buyPoint}
-              onChange={e => setBuyPoint(e.target.value as TradePoint)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-            >
-              {BUY_POINT_OPTIONS.map(p => (
-                <option key={p.key} value={p.key}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">Sell at</label>
-            <select
-              value={sellPoint}
-              onChange={e => setSellPoint(e.target.value as TradePoint)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-            >
-              {sellPointOptions.map(p => (
-                <option key={p.key} value={p.key}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">Buy price ($/t)</label>
-            <input
-              type="number"
-              value={buyPrice}
-              onChange={e => setBuyPrice(parseFloat(e.target.value) || 0)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-              min={0}
-              step={1}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">Volume (tonnes)</label>
-            <input
-              type="number"
-              value={volume}
-              onChange={e => setVolume(parseFloat(e.target.value) || 0)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-              min={1000}
-              step={1000}
-            />
-          </div>
-        </div>
+      {/* ════════════════════════════════════════════════════════
+          CLICKABLE CORRIDOR PIPELINE
+         ════════════════════════════════════════════════════════ */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <p className="text-xs text-gray-500 mb-6">
+          {selectionPhase === 'buy' && (
+            <span className="text-amber-400">Click where you BUY</span>
+          )}
+          {selectionPhase === 'sell' && (
+            <span>
+              Buying at <span className="text-emerald-400 font-semibold">{VISUAL_CORRIDOR.find(p => p.key === buyPoint)?.shortLabel}</span>
+              {' — '}
+              <span className="text-amber-400">now click where you SELL</span>
+            </span>
+          )}
+          {selectionPhase === 'done' && (
+            <span>
+              Buying at <span className="text-emerald-400 font-semibold">{VISUAL_CORRIDOR.find(p => p.key === buyPoint)?.shortLabel}</span>
+              {' → '}
+              Selling at <span className="text-amber-400 font-semibold">{VISUAL_CORRIDOR.find(p => p.key === sellPoint)?.shortLabel}</span>
+              <button onClick={resetCorridor} className="text-gray-400 hover:text-white ml-3 underline">Change</button>
+            </span>
+          )}
+        </p>
 
-        {/* Row 2: Commodity + Mine + Port + Destination + Transport */}
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">Commodity</label>
-            <select
-              value={commodity}
-              onChange={e => setCommodity(e.target.value as CommodityType)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-            >
-              {COMMODITIES.map(c => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
-          </div>
-          {needsInland && (
-            <>
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1.5">Mine</label>
-                <select
-                  value={selectedMineId}
-                  onChange={e => setSelectedMineId(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
+        {/* Pipeline visualization */}
+        <div className="flex items-center px-2">
+          {VISUAL_CORRIDOR.map((point, i) => {
+            const isInRange = buyIdx >= 0 && sellIdx >= 0 && i >= buyIdx && i <= sellIdx;
+            const isBuy = buyPoint === point.key && selectionPhase !== 'buy';
+            const isSell = sellPoint === point.key && selectionPhase === 'done';
+            const isClickable =
+              selectionPhase === 'buy' ||
+              (selectionPhase === 'sell' && i > buyIdx) ||
+              selectionPhase === 'done';
+
+            return (
+              <div key={point.key} className="flex items-center flex-1 first:flex-initial last:flex-initial">
+                {/* Connecting line before */}
+                {i > 0 && (
+                  <div className={`flex-1 h-1 transition-colors ${
+                    isInRange && i <= sellIdx ? 'bg-amber-500' : 'bg-gray-700'
+                  }`} />
+                )}
+
+                {/* Point circle */}
+                <button
+                  onClick={() => isClickable && handleCorridorClick(point.key)}
+                  disabled={!isClickable}
+                  className={`relative w-10 h-10 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                    isBuy ? 'bg-emerald-500 border-emerald-400 scale-110'
+                    : isSell ? 'bg-amber-500 border-amber-400 scale-110'
+                    : isInRange ? 'bg-amber-500/30 border-amber-500/50'
+                    : isClickable ? 'bg-gray-800 border-gray-600 hover:border-white hover:scale-105 cursor-pointer'
+                    : 'bg-gray-900 border-gray-700 opacity-40'
+                  }`}
                 >
-                  <option value="">None (no inland)</option>
-                  {filteredMines.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
+                  {isBuy && <span className="text-[10px] font-bold text-black">BUY</span>}
+                  {isSell && <span className="text-[10px] font-bold text-black">SELL</span>}
+                  {!isBuy && !isSell && <span className="w-2 h-2 rounded-full bg-gray-500" />}
+
+                  {/* Label below */}
+                  <span className={`absolute -bottom-6 text-[10px] whitespace-nowrap ${
+                    isBuy ? 'text-emerald-400 font-semibold'
+                    : isSell ? 'text-amber-400 font-semibold'
+                    : 'text-gray-500'
+                  }`}>
+                    {point.shortLabel}
+                  </span>
+                </button>
+
+                {/* Connecting line after */}
+                {i < VISUAL_CORRIDOR.length - 1 && (
+                  <div className={`flex-1 h-1 transition-colors ${
+                    isInRange && i < sellIdx ? 'bg-amber-500' : 'bg-gray-700'
+                  }`} />
+                )}
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1.5">Transport</label>
-                <select
-                  value={transportMode}
-                  onChange={e => setTransportMode(e.target.value as 'rail' | 'road')}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-                >
-                  <option value="rail">Rail</option>
-                  <option value="road">Road</option>
-                </select>
-              </div>
-            </>
-          )}
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">Loading port</label>
-            <select
-              value={selectedPortName}
-              onChange={e => setSelectedPortName(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-            >
-              {effectiveLoadingPorts.map(p => (
-                <option key={p.id} value={p.name}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-          {needsOcean && (
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">Destination</label>
-              <select
-                value={selectedDestName}
-                onChange={e => setSelectedDestName(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-              >
-                {effectiveDestinations.map(d => (
-                  <option key={d.id} value={d.name}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
+            );
+          })}
         </div>
 
-        {/* Row 3: Hedging + Financing */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Hedging */}
-          <div className="border border-gray-800 rounded-lg p-4 space-y-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hedging</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">FX hedge</label>
-                <select
-                  value={fxHedge}
-                  onChange={e => setFxHedge(e.target.value as FxHedgeType)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-                >
-                  {FX_HEDGE_OPTIONS.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer pb-2">
-                  <input
-                    type="checkbox"
-                    checked={hedgeCommodity}
-                    onChange={e => setHedgeCommodity(e.target.checked)}
-                    className="rounded border-gray-600 bg-gray-800 text-white focus:ring-0"
-                  />
-                  Price hedge
-                </label>
-              </div>
+        {/* Spacer for labels */}
+        <div className="h-4" />
+
+        {/* Price labels under corridor when simulation is done */}
+        {simulation && selectionPhase === 'done' && (
+          <div className="flex items-center justify-between mt-2 px-2">
+            <div className="text-center">
+              <p className="text-emerald-400 font-semibold text-sm">${simulation.buyPrice.toFixed(2)}/t</p>
+            </div>
+            <div className="flex-1 text-center">
+              <p className="text-gray-400 text-xs">
+                Corridor costs: <span className="text-white font-medium">${(simulation.sellPrice - simulation.buyPrice).toFixed(2)}/t</span>
+              </p>
+              {simulation.margin !== null && (
+                <p className={`text-xs font-semibold mt-0.5 ${simulation.margin >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  Margin: ${Math.abs(simulation.margin).toFixed(2)}/t ({simulation.marginPct !== null ? `${Math.abs(simulation.marginPct).toFixed(1)}%` : ''})
+                </p>
+              )}
+            </div>
+            <div className="text-center">
+              <p className="text-amber-400 font-semibold text-sm">${simulation.sellPrice.toFixed(2)}/t</p>
             </div>
           </div>
-
-          {/* Financing */}
-          <div className="border border-gray-800 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Financing</p>
-              <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={financingEnabled}
-                  onChange={e => setFinancingEnabled(e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-800 text-white focus:ring-0"
-                />
-                Include
-              </label>
-            </div>
-            {financingEnabled && (
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">LC cost %</label>
-                  <input
-                    type="number"
-                    value={lcCostPct}
-                    onChange={e => setLcCostPct(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-                    step={0.1}
-                    min={0}
-                    max={5}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Interest %</label>
-                  <input
-                    type="number"
-                    value={interestRatePct}
-                    onChange={e => setInterestRatePct(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-                    step={0.25}
-                    min={0}
-                    max={30}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Credit ins %</label>
-                  <input
-                    type="number"
-                    value={creditInsurancePct}
-                    onChange={e => setCreditInsurancePct(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-white/20"
-                    step={0.1}
-                    min={0}
-                    max={3}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Index price override */}
-        <div className="flex items-end gap-4">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">
-              Index CIF price ($/t) — {currentIndexPrice > 0 ? `using $${currentIndexPrice.toFixed(2)}` : 'no index available'}
-            </label>
-            <input
-              type="number"
-              value={indexPriceOverride}
-              onChange={e => setIndexPriceOverride(e.target.value)}
-              placeholder={indexPrices[commodity] ? `${indexPrices[commodity].toFixed(2)} (auto)` : 'Enter manually'}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-white/20"
-              min={0}
-              step={1}
-            />
-          </div>
-          {loading && (
-            <div className="pb-2">
-              <div className="w-5 h-5 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Optimize Routes button */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={runOptimization}
-          disabled={optimizing || buyPrice <= 0}
-          className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
-        >
-          {optimizing ? (
-            <>
-              <div className="w-4 h-4 border-2 border-gray-400 border-t-white rounded-full animate-spin" />
-              Evaluating routes...
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-              </svg>
-              Optimize Routes
-            </>
-          )}
-        </button>
-        {currentIndexPrice <= 0 && (
-          <span className="text-xs text-gray-500">Set an index CIF price to see margin rankings</span>
         )}
       </div>
 
-      {optimizeError && (
-        <div className="bg-red-900/30 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300">
-          {optimizeError}
+      {/* ════════════════════════════════════════════════════════
+          QUICK ROUTES (SA focused)
+         ════════════════════════════════════════════════════════ */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick Routes</h2>
+        <div className="flex flex-wrap gap-2">
+          {SA_QUICK_ROUTES.map((route, i) => (
+            <button
+              key={i}
+              onClick={() => selectQuickRoute(route)}
+              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${
+                selectedRoute === route && !customRoute
+                  ? 'border-amber-500 text-amber-400 bg-amber-500/10'
+                  : 'border-gray-700 text-gray-400 hover:border-gray-500'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full inline-block mr-1.5" style={{ backgroundColor: COMMODITY_CONFIG[route.commodity]?.color }} />
+              {route.label}
+            </button>
+          ))}
+          <button
+            onClick={() => { setCustomRoute(true); setSelectedRoute(null); }}
+            className={`text-xs px-3 py-2 rounded-lg border transition-colors ${
+              customRoute ? 'border-white text-white' : 'border-gray-700 text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            Custom route
+          </button>
         </div>
-      )}
+      </div>
 
-      {/* Route Optimization Results */}
-      {optimization && (
-        <RouteTable result={optimization} onSelectRoute={handleSelectRoute} />
-      )}
+      {/* ════════════════════════════════════════════════════════
+          TRADE DETAILS
+         ════════════════════════════════════════════════════════ */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Trade Details</h2>
 
+        {/* Commodity — chrome/manganese prominent */}
+        <div>
+          <label className="block text-sm text-gray-300 mb-2">Commodity</label>
+          <div className="flex gap-2 flex-wrap">
+            {PRIMARY_COMMODITIES.map(c => (
+              <button key={c} onClick={() => setCommodity(c)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                  commodity === c ? 'border-white text-white bg-gray-800' : 'border-gray-700 text-gray-400 hover:border-gray-500'
+                }`}>
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COMMODITY_CONFIG[c]?.color }} />
+                {COMMODITY_CONFIG[c]?.label}
+                <span className="text-[10px] text-gray-500 ml-1">{COMMODITY_PRICING[c]?.label}</span>
+              </button>
+            ))}
+            <button onClick={() => setShowAllCommodities(!showAllCommodities)}
+              className="text-xs text-gray-500 hover:text-gray-300 px-3 py-2">
+              {showAllCommodities ? 'Less' : 'More...'}
+            </button>
+          </div>
+          {showAllCommodities && (
+            <div className="flex gap-2 flex-wrap mt-2">
+              {ALL_COMMODITIES.filter(c => !PRIMARY_COMMODITIES.includes(c)).map(c => (
+                <button key={c} onClick={() => setCommodity(c)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition-colors ${
+                    commodity === c ? 'border-white text-white bg-gray-800' : 'border-gray-700 text-gray-400 hover:border-gray-500'
+                  }`}>
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COMMODITY_CONFIG[c]?.color }} />
+                  {COMMODITY_CONFIG[c]?.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Price + Volume */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-300 mb-1">Buy price ($/t)</label>
+            <input type="number" value={buyPrice} onChange={e => setBuyPrice(e.target.value)} placeholder="151"
+              className={INPUT_CLS} />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-300 mb-1">Volume (tonnes)</label>
+            <input type="number" value={volume} onChange={e => setVolume(e.target.value)} placeholder="15000"
+              className={INPUT_CLS} />
+          </div>
+        </div>
+
+        {/* Index price */}
+        <div>
+          <label className="block text-sm text-gray-300 mb-1">
+            Market price at sell point ($/t)
+            {indexPrices[commodity] ? (
+              <span className="text-gray-500 ml-2">Latest: ${indexPrices[commodity]}</span>
+            ) : (
+              <span className="text-amber-400 ml-2">No index -- enter manually</span>
+            )}
+          </label>
+          <input type="number" value={indexPriceOverride} onChange={e => setIndexPriceOverride(e.target.value)}
+            placeholder={indexPrices[commodity] ? `${indexPrices[commodity]} (auto)` : 'Enter market price'}
+            className={INPUT_CLS} />
+        </div>
+
+        {/* Loading indicator */}
+        {loading && (
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <div className="w-4 h-4 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
+            Calculating...
+          </div>
+        )}
+      </div>
+
+      {/* ════════════════════════════════════════════════════════
+          HEDGING & FINANCING (collapsed)
+         ════════════════════════════════════════════════════════ */}
+      <details className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden group">
+        <summary className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-800/30 list-none flex items-center justify-between">
+          Hedging & Financing
+          <ChevronIcon className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="px-6 pb-6 space-y-3">
+          <div>
+            <label className="text-xs text-gray-400">FX Hedge</label>
+            <select value={fxHedge} onChange={e => setFxHedge(e.target.value)}
+              className={INPUT_CLS + ' mt-1'}>
+              <option value="spot">No hedge (spot)</option>
+              <option value="forward_3m">3-month forward (~3.25% p.a.)</option>
+              <option value="forward_6m">6-month forward (~3.25% p.a.)</option>
+              <option value="collar_3m">3-month zero-cost collar (~1.5% p.a.)</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      {/* ── Error ─────────────────────────────────────────────── */}
       {error && (
         <div className="bg-red-900/30 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300">
           {error}
         </div>
       )}
 
-      {/* Results */}
+      {/* ════════════════════════════════════════════════════════
+          RESULTS
+         ════════════════════════════════════════════════════════ */}
       {simulation && (
         <>
-          {/* Corridor visualization */}
-          <CorridorBar simulation={simulation} />
+          {/* ── Big Answer: Your Margin ─────────────────────────── */}
+          <div className={`rounded-xl p-8 text-center ${
+            simulation.margin !== null && simulation.margin >= 0
+              ? 'bg-emerald-500/10 border border-emerald-500/20'
+              : simulation.margin !== null
+                ? 'bg-red-500/10 border border-red-500/20'
+                : 'bg-gray-900 border border-gray-800'
+          }`}>
+            {simulation.margin !== null ? (
+              <>
+                <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Your Margin</p>
+                <p className={`text-4xl font-bold tracking-tight ${
+                  simulation.margin >= 0 ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                  ${Math.abs(simulation.margin).toFixed(2)}/t
+                </p>
+                <p className={`text-lg mt-1 ${
+                  simulation.margin >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'
+                }`}>
+                  {simulation.marginPct !== null ? `${Math.abs(simulation.marginPct).toFixed(1)}%` : ''} {simulation.margin >= 0 ? 'profit' : 'loss'}
+                </p>
 
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <SummaryCard
-              label={`Buy (${simulation.buyPoint.replace('_', ' ')})`}
-              value={`$${simulation.buyPrice.toFixed(2)}`}
-              color="text-white"
-            />
-            <SummaryCard
-              label="Your cost at sell"
-              value={`$${simulation.sellPrice.toFixed(2)}`}
-              color="text-amber-400"
-            />
-            {simulation.indexSellPrice !== null && (
-              <SummaryCard
-                label={`Index ${simulation.sellPoint.toUpperCase()}`}
-                value={`$${simulation.indexSellPrice.toFixed(2)}`}
-                color="text-blue-400"
-              />
-            )}
-            <SummaryCard
-              label="Margin"
-              value={simulation.margin !== null ? `$${simulation.margin.toFixed(2)}` : '---'}
-              color={simulation.margin !== null ? (simulation.margin >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-gray-500'}
-              sub={simulation.marginPct !== null ? `${simulation.marginPct.toFixed(1)}%` : undefined}
-            />
-            {simulation.totalProfit !== null && (
-              <SummaryCard
-                label="Total profit"
-                value={`$${simulation.totalProfit.toLocaleString()}`}
-                color={simulation.totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}
-                sub={`${volume.toLocaleString()}t`}
-              />
-            )}
-          </div>
-
-          {/* Waterfall chart */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Forward Waterfall</h3>
-            <div className="space-y-1">
-              {simulation.steps.map((step, i) => {
-                const isMarker = step.amount === 0 && step.label.startsWith('=');
-                const maxVal = simulation.sellPrice || simulation.totalDeliveredCost;
-                const barWidth = Math.min((step.subtotal / maxVal) * 100, 100);
-
-                return (
-                  <div key={i} className={`flex items-center gap-3 ${isMarker ? 'py-2 border-t border-gray-700' : 'py-0.5'}`}>
-                    <div className="w-44 flex-shrink-0 text-right">
-                      <span className={`text-xs ${isMarker ? 'text-white font-semibold' : 'text-gray-400'}`}>
-                        {step.label}
-                      </span>
-                    </div>
-
-                    {!isMarker && (
-                      <div className="flex-1 flex items-center gap-2">
-                        <div className="flex-1 h-4 bg-gray-800 rounded-full overflow-hidden relative">
-                          <div
-                            className={`h-full rounded-full transition-all ${categoryColors[step.category] || 'bg-gray-500'}`}
-                            style={{ width: `${Math.max(barWidth, 2)}%` }}
-                          />
-                        </div>
-                        <span className="text-xs w-20 text-right flex-shrink-0 text-gray-300">
-                          +${step.amount.toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-
-                    {isMarker && (
-                      <div className="flex-1 flex items-center gap-2">
-                        <span className={`text-sm font-bold ${
-                          step.label === '= MARGIN'
-                            ? (step.subtotal >= 0 ? 'text-emerald-400' : 'text-red-400')
-                            : 'text-amber-400'
-                        }`}>
-                          ${step.subtotal.toFixed(2)}/t
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Category legend */}
-            <div className="flex flex-wrap gap-4 text-xs text-gray-500 mt-4 pt-4 border-t border-gray-800">
-              {Object.entries(categoryLabels).map(([key, label]) => (
-                <div key={key} className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${categoryColors[key]}`} />
-                  {label}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Detailed breakdown table */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800 text-xs text-gray-500">
-                  <th className="px-4 py-2 text-left font-medium">Component</th>
-                  <th className="px-4 py-2 text-right font-medium">$/t</th>
-                  <th className="px-4 py-2 text-right font-medium">Subtotal</th>
-                  <th className="px-2 py-2 text-center font-medium hidden sm:table-cell">Source</th>
-                  <th className="px-4 py-2 text-left font-medium hidden sm:table-cell">Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                {simulation.steps.map((step, i) => {
-                  const isMarker = step.amount === 0 && step.label.startsWith('=');
-                  return (
-                    <tr key={i} className={`border-b border-gray-800/50 ${isMarker ? 'bg-gray-800/30' : ''}`}>
-                      <td className={`px-4 py-2 ${isMarker ? 'font-semibold text-white' : 'text-gray-300'}`}>
-                        <div className="flex items-center gap-2">
-                          {!isMarker && (
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${categoryColors[step.category]}`} />
-                          )}
-                          {step.label}
-                        </div>
-                      </td>
-                      <td className={`px-4 py-2 text-right ${
-                        isMarker ? 'font-bold text-amber-400' : 'text-gray-300'
-                      }`}>
-                        {step.amount !== 0 ? `+${step.amount.toFixed(2)}` : ''}
-                      </td>
-                      <td className={`px-4 py-2 text-right ${
-                        isMarker
-                          ? step.label === '= MARGIN'
-                            ? (step.subtotal >= 0 ? 'font-bold text-emerald-400' : 'font-bold text-red-400')
-                            : 'font-bold text-amber-400'
-                          : 'text-gray-400'
-                      }`}>
-                        ${step.subtotal.toFixed(2)}
-                      </td>
-                      <td className="px-2 py-2 text-center hidden sm:table-cell">
-                        {step.quality && (
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${QUALITY_BADGES[step.quality as DataQuality].bgColor} ${QUALITY_BADGES[step.quality as DataQuality].color} ${QUALITY_BADGES[step.quality as DataQuality].borderColor}`}>
-                            {QUALITY_BADGES[step.quality as DataQuality].label}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-gray-500 hidden sm:table-cell">{step.note}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Margin + Timeline + Breakeven */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Margin comparison */}
-            {simulation.margin !== null && simulation.indexSellPrice !== null && (
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Market Comparison</p>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Index {simulation.sellPoint.toUpperCase()}</span>
-                    <span className="text-white font-medium">${simulation.indexSellPrice.toFixed(2)}/t</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Your cost at {simulation.sellPoint.toUpperCase()}</span>
-                    <span className="text-white font-medium">${simulation.sellPrice.toFixed(2)}/t</span>
-                  </div>
-                  <div className="border-t border-gray-800 pt-2 flex justify-between text-sm">
-                    <span className="text-gray-400">Margin</span>
-                    <span className={`font-bold ${simulation.margin >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      ${simulation.margin.toFixed(2)}/t ({simulation.marginPct?.toFixed(1)}%)
+                {simulation.totalProfit !== null && (
+                  <p className="text-sm text-gray-400 mt-4">
+                    Total profit on {vol.toLocaleString()}t:{' '}
+                    <span className={`font-bold ${simulation.totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      ${Math.abs(simulation.totalProfit).toLocaleString()}
                     </span>
-                  </div>
-                  {simulation.totalProfit !== null && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-400">Total profit</span>
-                      <span className={`font-bold ${simulation.totalProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        ${simulation.totalProfit.toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  {simulation.breakevenBuyPrice !== null && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-400">Breakeven buy price</span>
-                      <span className="text-yellow-400 font-medium">${simulation.breakevenBuyPrice.toFixed(2)}/t</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+                  </p>
+                )}
 
-            {/* Timeline */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Estimated Timeline</p>
-              <div className="text-center py-2">
-                <span className="text-3xl font-bold text-white">{simulation.estimatedDaysToDelivery}</span>
-                <span className="text-sm text-gray-400 ml-1">days</span>
-              </div>
-              <p className="text-xs text-gray-500 text-center">
-                {buyPointLabel} to {CORRIDOR_POINTS.find(p => p.key === sellPoint)?.label || sellPoint}
-              </p>
-            </div>
-
-            {/* Financing summary */}
-            {simulation.financing && (
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Financing Cost</p>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">LC cost</span>
-                    <span className="text-white">${simulation.financing.lcCost.toFixed(2)}/t</span>
+                <div className="grid grid-cols-3 gap-4 mt-6 text-sm">
+                  <div>
+                    <p className="text-gray-500">Your {simulation.sellPoint.toUpperCase()} cost</p>
+                    <p className="text-white font-semibold">${simulation.sellPrice.toFixed(2)}/t</p>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Interest</span>
-                    <span className="text-white">${simulation.financing.interestCost.toFixed(2)}/t</span>
+                  <div>
+                    <p className="text-gray-500">Market price</p>
+                    <p className="text-amber-400 font-semibold">
+                      {simulation.indexSellPrice !== null ? `$${simulation.indexSellPrice.toFixed(2)}/t` : '---'}
+                    </p>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Credit insurance</span>
-                    <span className="text-white">${simulation.financing.insuranceCost.toFixed(2)}/t</span>
-                  </div>
-                  <div className="border-t border-gray-800 pt-2 flex justify-between text-sm">
-                    <span className="text-gray-400">Total</span>
-                    <span className="text-cyan-400 font-bold">${simulation.financing.totalFinancingCost.toFixed(2)}/t</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-500">Working capital days</span>
-                    <span className="text-gray-400">{simulation.financing.workingCapitalDays}</span>
+                  <div>
+                    <p className="text-gray-500">Breakeven buy</p>
+                    <p className="text-white font-semibold">
+                      {simulation.breakevenBuyPrice !== null ? `$${simulation.breakevenBuyPrice.toFixed(2)}/t` : '---'}
+                    </p>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {/* Placeholder when no margin or financing */}
-            {simulation.margin === null && !simulation.financing && (
-              <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center justify-center">
-                <p className="text-xs text-gray-500 text-center">Set an index CIF price above to see margin analysis</p>
-              </div>
+                <p className="text-xs text-gray-500 mt-4">
+                  Estimated {simulation.estimatedDaysToDelivery} days mine to delivery
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Your {simulation.sellPoint.toUpperCase()} Cost</p>
+                <p className="text-4xl font-bold tracking-tight text-amber-400">
+                  ${simulation.sellPrice.toFixed(2)}/t
+                </p>
+                <p className="text-sm text-gray-500 mt-4">
+                  Set a market price above to see margin analysis
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Estimated {simulation.estimatedDaysToDelivery} days mine to delivery
+                </p>
+              </>
             )}
           </div>
 
-          {/* Data Sources & Accuracy */}
+          {/* ── Cost Breakdown (collapsible, open by default) ──── */}
+          <details open className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden group">
+            <summary className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-800/30 list-none flex items-center justify-between">
+              Cost Breakdown (${simulation.buyPrice.toFixed(2)} &rarr; ${simulation.sellPrice.toFixed(2)})
+              <ChevronIcon className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="px-6 pb-6">
+              <div className="space-y-5">
+                {groupedSteps.map(group => (
+                  <div key={group.category}>
+                    {/* Category header with subtotal */}
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        {group.label}
+                      </h3>
+                      <span className="text-sm font-semibold text-white">
+                        ${group.subtotal.toFixed(2)}/t
+                      </span>
+                    </div>
+                    {/* Individual line items */}
+                    <div className="space-y-1">
+                      {group.steps.map((step, i) => (
+                        <div key={i} className="flex items-center justify-between py-1 text-sm">
+                          <span className="text-gray-300 flex items-center gap-2">
+                            {step.label}
+                          </span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-gray-300 tabular-nums">
+                              ${step.amount.toFixed(2)}
+                            </span>
+                            {step.quality && (
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${QUALITY_BADGES[step.quality as DataQuality].bgColor} ${QUALITY_BADGES[step.quality as DataQuality].color} ${QUALITY_BADGES[step.quality as DataQuality].borderColor}`}>
+                                {QUALITY_BADGES[step.quality as DataQuality].label}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Divider between groups */}
+                    <div className="border-t border-gray-800 mt-3" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+
+          {/* ── Route Optimization (collapsible) ───────────────── */}
+          <details className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden group">
+            <summary className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-800/30 list-none flex items-center justify-between">
+              Find Best Route
+              <ChevronIcon className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="px-6 pb-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={runOptimization}
+                  disabled={optimizing || !buyPrice || parseFloat(buyPrice) <= 0}
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {optimizing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-gray-400 border-t-white rounded-full animate-spin" />
+                      Evaluating routes...
+                    </>
+                  ) : (
+                    'Optimize Routes'
+                  )}
+                </button>
+                {currentIndexPrice <= 0 && (
+                  <span className="text-xs text-gray-500">Set a market price to see margin rankings</span>
+                )}
+              </div>
+
+              {optimizeError && (
+                <div className="bg-red-900/30 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300">
+                  {optimizeError}
+                </div>
+              )}
+
+              {/* Route cards */}
+              {optimization && optimization.routes.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500 mb-2">
+                    {optimization.routes.length} routes evaluated. Click to apply.
+                  </p>
+                  {optimization.routes.map((route) => {
+                    const isBest = route.rank === optimization.bestRoute?.rank;
+                    const marginPositive = route.margin >= 0;
+
+                    return (
+                      <button
+                        key={`${route.loadingPort}-${route.destination}-${route.transportMode}`}
+                        onClick={() => handleSelectRoute(route)}
+                        className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                          isBest
+                            ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
+                            : 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className={`text-xs font-bold w-6 ${isBest ? 'text-emerald-400' : 'text-gray-500'}`}>
+                              #{route.rank}
+                            </span>
+                            <span className="text-sm text-white">
+                              {route.loadingPort}
+                              {route.destination !== 'N/A' && (
+                                <span className="text-gray-400"> &rarr; {route.destination}</span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className={`font-semibold ${marginPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                              ${route.margin.toFixed(2)}/t
+                            </span>
+                            <span className="text-gray-500 text-xs">
+                              {route.transitDays}d
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {optimization && optimization.routes.length === 0 && (
+                <p className="text-sm text-gray-400">No viable routes found. Try adjusting parameters.</p>
+              )}
+            </div>
+          </details>
+
+          {/* ── Data Sources (collapsed) ───────────────────────── */}
           <DataSourcesPanel steps={simulation.steps} />
         </>
       )}
@@ -796,117 +724,61 @@ export function SimulatorClient({ mines, loadingPorts, destinationPorts, indexPr
   );
 }
 
-// ── Corridor Bar Component ─────────────────────────────────────────────────
+// ── Helper: Group steps by category ──────────────────────────────────────────
 
-function CorridorBar({ simulation }: { simulation: DealSimulation }) {
-  const corridor = simulation.corridor;
-  if (!corridor || corridor.length === 0) return null;
-
-  const activePoints = corridor.filter(p => p.isActive);
-  const buyIdx = corridor.findIndex(p => p.point === simulation.buyPoint);
-  const sellIdx = corridor.findIndex(p => p.point === simulation.sellPoint);
-  const totalCosts = simulation.sellPrice - simulation.buyPrice;
-
-  return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Supply Chain Corridor</p>
-
-      {/* Corridor track */}
-      <div className="relative px-4">
-        {/* Background line */}
-        <div className="flex items-center justify-between relative">
-          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-gray-700" />
-
-          {/* Active segment highlight */}
-          {buyIdx >= 0 && sellIdx >= 0 && (
-            <div
-              className="absolute top-1/2 -translate-y-1/2 h-1 bg-amber-500/60 rounded-full"
-              style={{
-                left: `${(buyIdx / (corridor.length - 1)) * 100}%`,
-                width: `${((sellIdx - buyIdx) / (corridor.length - 1)) * 100}%`,
-              }}
-            />
-          )}
-
-          {/* Points */}
-          {corridor.map((cp, i) => {
-            const isBuy = cp.point === simulation.buyPoint;
-            const isSell = cp.point === simulation.sellPoint;
-            const isInactive = !cp.isActive;
-
-            return (
-              <div key={cp.point} className="relative z-10 flex flex-col items-center" style={{ width: 0 }}>
-                {/* Dot */}
-                <div className={`w-3 h-3 rounded-full border-2 ${
-                  isBuy ? 'bg-emerald-400 border-emerald-400' :
-                  isSell ? 'bg-amber-400 border-amber-400' :
-                  isInactive ? 'bg-gray-700 border-gray-600' :
-                  'bg-gray-500 border-gray-400'
-                }`} />
-
-                {/* Label below */}
-                <span className={`text-[10px] mt-2 whitespace-nowrap ${
-                  isBuy || isSell ? 'text-white font-semibold' : isInactive ? 'text-gray-600' : 'text-gray-400'
-                }`}>
-                  {cp.point.replace('_', ' ').toUpperCase()}
-                </span>
-
-                {/* Tag */}
-                {isBuy && (
-                  <span className="text-[9px] font-bold text-emerald-400 mt-0.5">BUY</span>
-                )}
-                {isSell && (
-                  <span className="text-[9px] font-bold text-amber-400 mt-0.5">SELL</span>
-                )}
-
-                {/* Price */}
-                {(isBuy || isSell) && (
-                  <span className={`text-xs font-medium mt-0.5 ${isBuy ? 'text-emerald-300' : 'text-amber-300'}`}>
-                    ${isBuy ? simulation.buyPrice.toFixed(2) : simulation.sellPrice.toFixed(2)}/t
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Cost summary below corridor */}
-      <div className="flex justify-center gap-8 text-xs pt-2">
-        <div className="text-center">
-          <span className="text-gray-500">Your costs</span>
-          <span className="text-white font-semibold ml-2">${totalCosts.toFixed(2)}/t</span>
-        </div>
-        {simulation.margin !== null && (
-          <div className="text-center">
-            <span className="text-gray-500">Margin</span>
-            <span className={`font-semibold ml-2 ${simulation.margin >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              ${simulation.margin.toFixed(2)}/t
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+interface StepGroup {
+  category: string;
+  label: string;
+  subtotal: number;
+  steps: ForwardWaterfallStep[];
 }
 
-// ── Helper Components ──────────────────────────────────────────────────────
+function groupStepsByCategory(steps: ForwardWaterfallStep[]): StepGroup[] {
+  const groups = new Map<string, ForwardWaterfallStep[]>();
 
-function SummaryCard({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
+  for (const step of steps) {
+    // Skip marker rows (like "= FOB PRICE", "= CIF COST", "= MARGIN")
+    const isMarker = step.amount === 0 && step.label.startsWith('=');
+    if (isMarker) continue;
+    // Skip the initial buy price row (category: price)
+    if (step.category === 'price') continue;
+
+    const cat = step.category;
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push(step);
+  }
+
+  // Sort by canonical order
+  const result: StepGroup[] = [];
+  for (const cat of CATEGORY_ORDER) {
+    const catSteps = groups.get(cat);
+    if (!catSteps || catSteps.length === 0) continue;
+
+    const subtotal = catSteps.reduce((sum, s) => sum + s.amount, 0);
+    result.push({
+      category: cat,
+      label: CATEGORY_LABELS[cat] || cat,
+      subtotal,
+      steps: catSteps,
+    });
+  }
+
+  return result;
+}
+
+// ── Chevron Icon ─────────────────────────────────────────────────────────────
+
+function ChevronIcon({ className }: { className?: string }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className={`text-lg font-bold ${color}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400">{sub}</p>}
-    </div>
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
   );
 }
 
 // ── Data Sources Panel ──────────────────────────────────────────────────────
 
 function DataSourcesPanel({ steps }: { steps: DealSimulation['steps'] }) {
-  const [expanded, setExpanded] = useState(false);
-
   // Collect unique sources from steps
   const sourceIds = new Set<string>();
   for (const step of steps) {
@@ -920,50 +792,35 @@ function DataSourcesPanel({ steps }: { steps: DealSimulation['steps'] }) {
   if (uniqueSources.length === 0) return null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-800/50 transition-colors"
-      >
+    <details className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden group">
+      <summary className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-800/30 list-none flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">
-            Data Sources & Accuracy
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            {uniqueSources.length} sources used in this simulation
-          </p>
+          <span>Data Sources & Accuracy</span>
+          <span className="text-gray-500 font-normal ml-2">{uniqueSources.length} sources</span>
         </div>
-        <svg
-          className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {expanded && (
-        <div className="px-6 pb-5 space-y-2">
-          {uniqueSources.map(source => (
-            <div key={source.id} className="flex items-center gap-3">
-              <span className={`text-[9px] px-1.5 py-0.5 rounded-full border flex-shrink-0 ${QUALITY_BADGES[source.quality].bgColor} ${QUALITY_BADGES[source.quality].color} ${QUALITY_BADGES[source.quality].borderColor}`}>
-                {QUALITY_BADGES[source.quality].label}
-              </span>
-              <div className="flex-1 min-w-0">
-                <span className="text-xs text-white">{source.name}</span>
-                {source.lastUpdated && (
-                  <span className="text-[10px] text-gray-500 ml-2">Updated {source.lastUpdated}</span>
-                )}
-                <span className="text-[10px] text-gray-500 ml-2">{source.note}</span>
-              </div>
-              {source.upgradeAvailable && (
-                <span className="text-[9px] text-amber-400 flex-shrink-0 hidden lg:block">
-                  Upgrade: {source.upgradeAvailable}
-                </span>
+        <ChevronIcon className="w-4 h-4 text-gray-500 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="px-6 pb-5 space-y-2">
+        {uniqueSources.map(source => (
+          <div key={source.id} className="flex items-center gap-3">
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full border flex-shrink-0 ${QUALITY_BADGES[source.quality].bgColor} ${QUALITY_BADGES[source.quality].color} ${QUALITY_BADGES[source.quality].borderColor}`}>
+              {QUALITY_BADGES[source.quality].label}
+            </span>
+            <div className="flex-1 min-w-0">
+              <span className="text-xs text-white">{source.name}</span>
+              {source.lastUpdated && (
+                <span className="text-[10px] text-gray-500 ml-2">Updated {source.lastUpdated}</span>
               )}
+              <span className="text-[10px] text-gray-500 ml-2">{source.note}</span>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+            {source.upgradeAvailable && (
+              <span className="text-[9px] text-amber-400 flex-shrink-0 hidden lg:block">
+                Upgrade: {source.upgradeAvailable}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
