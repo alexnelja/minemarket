@@ -1,5 +1,5 @@
 import { requireAuth } from '@/lib/auth';
-import { getDealsByUser } from '@/lib/deal-queries';
+import { getDealsByUserLight } from '@/lib/deal-queries';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import type { CommodityType } from '@/lib/types';
 import { PositionClient } from './position-client';
@@ -11,12 +11,12 @@ export const metadata = {
 
 export default async function PositionsPage() {
   const user = await requireAuth();
-  const deals = await getDealsByUser(user.id);
+  const deals = await getDealsByUserLight(user.id);
 
   // Compute positions by commodity
   const positions = computePositions(deals, user.id);
 
-  return <PositionClient positions={positions} deals={deals} userId={user.id} />;
+  return <PositionClient positions={positions} deals={deals as any} userId={user.id} />;
 }
 
 function computePositions(deals: any[], userId: string) {

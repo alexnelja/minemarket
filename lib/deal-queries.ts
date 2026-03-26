@@ -57,6 +57,18 @@ export async function getDealsByUser(userId: string): Promise<DealWithDetails[]>
   });
 }
 
+export async function getDealsByUserLight(userId: string): Promise<Deal[]> {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from('deals')
+    .select('*')
+    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+  return data as Deal[];
+}
+
 export async function getDealById(dealId: string, userId: string): Promise<DealWithDetails | null> {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase

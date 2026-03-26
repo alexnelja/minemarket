@@ -43,6 +43,7 @@
     "better-sqlite3": "^12.8.0",
     "jsdom": "^29.0.1",
     "pg": "^8.20.0",
+    "playwright": "^1.58.2",
     "sea-ports": "^0.0.9",
     "tailwindcss": "^4",
     "typescript": "^5",

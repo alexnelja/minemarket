@@ -2,10 +2,12 @@ import { requireAuth } from '@/lib/auth';
 import { getDealsByUser, getDealMilestones } from '@/lib/deal-queries';
 import { getMines, getHarbours } from '@/lib/queries';
 import { getNextStatusesForRole } from '@/lib/deal-helpers';
+import { COMMODITY_CONFIG } from '@/lib/types';
 import { PipelineTab } from './pipeline-tab';
 import { ShipmentTab } from './shipment-tab';
 import { DealsTabSwitcher } from './deals-tab-switcher';
 import type { DealMilestone, GeoPoint } from '@/lib/types';
+import Link from 'next/link';
 
 export default async function DealsPage() {
   const user = await requireAuth();
@@ -41,12 +43,12 @@ export default async function DealsPage() {
     ? `${(totalValue / 1_000).toFixed(0)}K`
     : totalValue.toLocaleString();
   const inTransitCount = deals.filter(d => ['loading', 'in_transit', 'delivered'].includes(d.status)).length;
-  const pendingCount = deals.filter(d => {
+  const pendingDeals = deals.filter(d => {
     if (['completed', 'cancelled'].includes(d.status)) return false;
     const role = d.buyer_id === user.id ? 'buyer' as const : 'seller' as const;
-    const nextStatuses = getNextStatusesForRole(d.status, role);
-    return nextStatuses.length > 0;
-  }).length;
+    return getNextStatusesForRole(d.status, role).length > 0;
+  });
+  const pendingCount = pendingDeals.length;
 
   return (
     <div>
@@ -72,7 +74,18 @@ export default async function DealsPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-500 mb-1">Pending Actions</p>
           <p className="text-2xl font-bold text-white">{pendingCount}</p>
-          {pendingCount > 0 && <p className="text-xs text-amber-400 mt-0.5">Needs your attention</p>}
+          {pendingCount > 0 && (
+            <div className="mt-2 space-y-1">
+              {pendingDeals.slice(0, 2).map(d => (
+                <Link key={d.id} href={`/deals/${d.id}`} className="text-[10px] text-amber-400 hover:text-amber-300 block truncate">
+                  {'\u2192'} {COMMODITY_CONFIG[d.commodity_type]?.label}: {d.counterparty_name}
+                </Link>
+              ))}
+              {pendingCount > 2 && (
+                <span className="text-[10px] text-gray-500">+{pendingCount - 2} more</span>
+              )}
+            </div>
+          )}
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-500 mb-1">In Transit</p>
