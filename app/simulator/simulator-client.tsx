@@ -6,6 +6,9 @@ import { COMMODITY_CONFIG, COMMODITY_PRICING } from '@/lib/types';
 import type { DealSimulation, TradePoint, ForwardWaterfallStep } from '@/lib/forward-waterfall';
 import type { OptimizationResult, RouteOption } from '@/lib/route-optimizer';
 import { QUALITY_BADGES, DATA_SOURCES, type DataQuality } from '@/lib/data-sources';
+import { calculateTimeline } from '@/lib/supply-chain-timeline';
+import type { SupplyChainTimeline } from '@/lib/supply-chain-timeline';
+import { TimelineVisual } from './timeline-visual';
 
 // ── SA-focused defaults ─────────────────────────────────────────────────────
 
@@ -78,6 +81,9 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
   const [simulation, setSimulation] = useState<DealSimulation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // State: timeline
+  const [timeline, setTimeline] = useState<SupplyChainTimeline | null>(null);
 
   // State: route optimization
   const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
@@ -179,6 +185,23 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
       }
       const data = await res.json();
       setSimulation(data);
+
+      // Compute supply chain timeline alongside simulation
+      const route = selectedRoute;
+      const tl = calculateTimeline({
+        mineCoords: route?.mineCoords,
+        portCoords: route?.portCoords || { lat: -28.801, lng: 32.038 },
+        destinationCoords: route?.destCoords,
+        mineName: route?.mine,
+        portName: route?.port || 'Richards Bay',
+        destinationName: route?.dest,
+        transportMode: 'rail',
+        volumeTonnes: parseInt(volume) || 15000,
+        buyPoint: buyPoint || 'mine_gate',
+        sellPoint: sellPoint || 'cif',
+        includePaymentTimeline: true,
+      });
+      setTimeline(tl);
     } catch {
       setError('Failed to run simulation');
     } finally {
@@ -582,6 +605,9 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
               </>
             )}
           </div>
+
+          {/* ── Supply Chain Timeline ──────────────────────────── */}
+          {timeline && <TimelineVisual timeline={timeline} />}
 
           {/* ── Cost Breakdown (collapsible, open by default) ──── */}
           <details open className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden group">

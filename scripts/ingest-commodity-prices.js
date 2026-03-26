@@ -23,10 +23,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 const PINK_SHEET_URL = 'https://thedocs.worldbank.org/en/doc/5d903e848db1d1b83e0ec8f744e55570-0350012021/related/CMO-Historical-Data-Monthly.xlsx';
 
-// Benchmark fallbacks
+// Benchmark fallbacks (corrected March 2026)
+// Chrome: SA 40-42% CIF China ~$315/t (SMM scraper returned wrong $40 value)
+// Manganese: SA 37% FOB ~$140/t ($3.80/dmtu × 37% Mn)
 const BENCHMARKS = {
-  chrome: 185,       // $/t
-  manganese: 200,    // $/t (≈ $4.50/dmtu equivalent)
+  chrome: 315,       // $/t — SA 40-42% Cr2O3 concentrate CIF China
+  manganese: 140,    // $/t — SA 37% Mn ore FOB (~$3.80/dmtu × 37)
   aggregates: 15,    // $/t — configured benchmark
 };
 

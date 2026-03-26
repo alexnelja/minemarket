@@ -4,6 +4,7 @@ import type { TradePoint } from '@/lib/forward-waterfall';
 import type { CommodityType } from '@/lib/types';
 import type { FxHedgeType } from '@/lib/price-waterfall';
 import type { TradeFinancing } from '@/lib/forward-waterfall';
+import { calculateTimeline } from '@/lib/supply-chain-timeline';
 
 const VALID_TRADE_POINTS: TradePoint[] = ['mine_gate', 'stockpile', 'port_gate', 'fob', 'cfr', 'cif'];
 
@@ -124,5 +125,20 @@ export async function GET(request: NextRequest) {
     financing,
   });
 
-  return NextResponse.json(simulation);
+  // Calculate supply chain timeline
+  const timeline = calculateTimeline({
+    mineCoords: mineLat && mineLng ? { lat: parseFloat(mineLat), lng: parseFloat(mineLng) } : undefined,
+    portCoords: { lat: parseFloat(loadingLat), lng: parseFloat(loadingLng) },
+    destinationCoords: { lat: parseFloat(destLat), lng: parseFloat(destLng) },
+    mineName,
+    portName: loadingPort,
+    destinationName,
+    transportMode,
+    volumeTonnes,
+    buyPoint,
+    sellPoint,
+    includePaymentTimeline: true,
+  });
+
+  return NextResponse.json({ ...simulation, timeline });
 }
