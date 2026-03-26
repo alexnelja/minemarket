@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "./sidebar";
+import { CommandPalette } from './components/command-palette';
 
 export const metadata: Metadata = {
   title: "MineMarket — Deal Workspace for Commodity Traders",
@@ -24,6 +25,7 @@ export default function RootLayout({
             {children}
           </main>
         </div>
+        <CommandPalette />
       </body>
     </html>
   );

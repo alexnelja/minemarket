@@ -17,6 +17,7 @@ import { DealTabs } from './deal-tabs';
 import { DealMessages } from './deal-messages';
 import { InviteCounterparty } from './invite-counterparty';
 import { DocumentFlow } from './document-flow';
+import { PnlTracker } from './pnl-tracker';
 import { VerificationPanel } from './verification-panel';
 import { verifyDealDocuments } from '@/lib/platform-verification';
 import { getTrustScoreForUser } from '@/lib/trust-queries';
@@ -150,6 +151,19 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
               dealId={deal.id}
               currentStatus={deal.status}
               isBuyer={isBuyer}
+            />
+
+            {/* P&L Tracker */}
+            <PnlTracker
+              dealId={deal.id}
+              commodity={deal.commodity_type}
+              agreedPrice={deal.agreed_price}
+              volumeTonnes={deal.volume_tonnes}
+              currency={deal.currency}
+              isBuyer={isBuyer}
+              status={deal.status}
+              fxRateLocked={deal.fx_rate_locked}
+              escrowAmount={deal.escrow_amount}
             />
 
             {/* Invite counterparty */}

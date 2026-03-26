@@ -68,6 +68,15 @@ export function Sidebar() {
           </Link>
         </div>
         <nav className="flex-1 px-3 space-y-0.5">
+          {/* Search trigger */}
+          <button
+            onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+            className="flex items-center gap-2 w-full px-3 py-2 mb-2 text-xs text-gray-500 bg-gray-900 rounded-lg border border-gray-800 hover:border-gray-700"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            Search...
+            <kbd className="ml-auto text-[10px] text-gray-600 bg-gray-800 px-1 py-0.5 rounded">{'\u2318'}K</kbd>
+          </button>
           {/* Primary: Deals */}
           {primaryItems.map((item) => {
             const active = isActive(item.href);
