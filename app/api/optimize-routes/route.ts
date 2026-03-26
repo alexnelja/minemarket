@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { optimizeRoutes } from '@/lib/route-optimizer';
+import { optimizeTransitRoutes } from '@/lib/route-optimizer';
 import type { TradePoint } from '@/lib/forward-waterfall';
 import type { CommodityType } from '@/lib/types';
 
@@ -10,9 +10,6 @@ export async function GET(request: NextRequest) {
 
   const commodity = params.get('commodity') as CommodityType | null;
   const buyPriceRaw = params.get('buy_price');
-  const buyPointRaw = params.get('buy_point') as TradePoint | null;
-  const sellPointRaw = params.get('sell_point') as TradePoint | null;
-  const volumeRaw = params.get('volume');
 
   if (!commodity || !buyPriceRaw) {
     return NextResponse.json(
@@ -26,6 +23,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'buy_price must be a positive number' }, { status: 400 });
   }
 
+  const buyPointRaw = params.get('buy_point') as TradePoint | null;
+  const sellPointRaw = params.get('sell_point') as TradePoint | null;
   const buyPoint: TradePoint = (buyPointRaw && VALID_TRADE_POINTS.includes(buyPointRaw)) ? buyPointRaw : 'mine_gate';
   const sellPoint: TradePoint = (sellPointRaw && VALID_TRADE_POINTS.includes(sellPointRaw)) ? sellPointRaw : 'cif';
 
@@ -33,15 +32,35 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'sell_point must come after buy_point in the corridor' }, { status: 400 });
   }
 
-  const volumeTonnes = parseFloat(volumeRaw ?? '15000');
+  const volumeTonnes = parseFloat(params.get('volume') ?? '15000');
 
-  // Optional mine coordinates
-  const mineLat = params.get('mine_lat');
-  const mineLng = params.get('mine_lng');
-  const mineName = params.get('mine_name') || undefined;
-  const mineCoords = mineLat && mineLng
-    ? { lat: parseFloat(mineLat), lng: parseFloat(mineLng) }
-    : undefined;
+  // Origin (mine) coordinates
+  const originLat = params.get('origin_lat') || params.get('mine_lat');
+  const originLng = params.get('origin_lng') || params.get('mine_lng');
+  const originName = params.get('origin_name') || params.get('mine_name') || 'Mine';
+
+  if (!originLat || !originLng) {
+    return NextResponse.json(
+      { error: 'Missing required parameters: origin_lat, origin_lng (mine coordinates)' },
+      { status: 400 },
+    );
+  }
+
+  const originCoords = { lat: parseFloat(originLat), lng: parseFloat(originLng) };
+
+  // Destination coordinates
+  const destLat = params.get('dest_lat');
+  const destLng = params.get('dest_lng');
+  const destName = params.get('dest_name') || params.get('destination_name') || 'Destination';
+
+  if (!destLat || !destLng) {
+    return NextResponse.json(
+      { error: 'Missing required parameters: dest_lat, dest_lng (destination coordinates)' },
+      { status: 400 },
+    );
+  }
+
+  const destinationCoords = { lat: parseFloat(destLat), lng: parseFloat(destLng) };
 
   // Index price: from param or try DB
   let indexCifPrice: number | undefined;
@@ -67,22 +86,17 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const fxHedge = params.get('fx_hedge') || 'spot';
-  const hedgeCommodityPrice = params.get('hedge_commodity') === 'true';
-  const dealCurrency = params.get('deal_currency') || 'USD';
-
-  const result = optimizeRoutes({
+  const result = optimizeTransitRoutes({
     commodity,
-    buyPoint,
-    sellPoint,
     buyPrice,
     volumeTonnes,
-    mineCoords,
-    mineName,
+    originCoords,
+    originName,
+    destinationCoords,
+    destinationName: destName,
     indexCifPrice,
-    fxHedge,
-    hedgeCommodityPrice,
-    dealCurrency,
+    buyPoint,
+    sellPoint,
   });
 
   return NextResponse.json(result);

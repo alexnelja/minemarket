@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { GeoPoint, CommodityType } from '@/lib/types';
 import { COMMODITY_CONFIG, COMMODITY_PRICING } from '@/lib/types';
 import type { DealSimulation, TradePoint, ForwardWaterfallStep } from '@/lib/forward-waterfall';
-import type { OptimizationResult, RouteOption } from '@/lib/route-optimizer';
+import type { RouteOptimizationResult, TransitRouteOption } from '@/lib/route-optimizer';
 import { QUALITY_BADGES, DATA_SOURCES, type DataQuality, QUALITY_VARIANT } from '@/lib/data-sources';
 import { QualityBadge } from '@/app/components/quality-badge';
 import { calculateTimeline } from '@/lib/supply-chain-timeline';
@@ -87,7 +87,7 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
   const [timeline, setTimeline] = useState<SupplyChainTimeline | null>(null);
 
   // State: route optimization
-  const [optimization, setOptimization] = useState<OptimizationResult | null>(null);
+  const [optimization, setOptimization] = useState<RouteOptimizationResult | null>(null);
   const [optimizing, setOptimizing] = useState(false);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
 
@@ -223,9 +223,15 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [selectionPhase, runSimulation, buyPrice]);
 
-  // Route optimization
+  // Route optimization — enumerate transit ports for fixed origin → destination
   const runOptimization = useCallback(async () => {
     if (!buyPrice || parseFloat(buyPrice) <= 0) return;
+
+    const route = selectedRoute;
+    if (!route?.mineCoords || !route?.destCoords) {
+      setOptimizeError('Select a route with mine and destination to optimize');
+      return;
+    }
 
     setOptimizing(true);
     setOptimizeError(null);
@@ -236,15 +242,13 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
       sell_point: sellPoint,
       buy_price: buyPrice,
       volume: volume || '15000',
-      fx_hedge: fxHedge,
+      origin_lat: String(route.mineCoords.lat),
+      origin_lng: String(route.mineCoords.lng),
+      origin_name: route.mine || '',
+      dest_lat: String(route.destCoords.lat),
+      dest_lng: String(route.destCoords.lng),
+      dest_name: route.dest || '',
     });
-
-    const route = selectedRoute;
-    if (route?.mineCoords) {
-      qp.set('mine_lat', String(route.mineCoords.lat));
-      qp.set('mine_lng', String(route.mineCoords.lng));
-      qp.set('mine_name', route.mine || '');
-    }
 
     if (currentIndexPrice > 0) {
       qp.set('index_price', String(currentIndexPrice));
@@ -264,16 +268,29 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
     } finally {
       setOptimizing(false);
     }
-  }, [commodity, buyPoint, sellPoint, buyPrice, volume, selectedRoute, fxHedge, currentIndexPrice]);
+  }, [commodity, buyPoint, sellPoint, buyPrice, volume, selectedRoute, currentIndexPrice]);
 
-  // Handle selecting an optimized route
-  const handleSelectRoute = useCallback((route: RouteOption) => {
-    // Find matching SA route or keep current
-    const match = SA_QUICK_ROUTES.find(r => r.port === route.loadingPort);
-    if (match) {
-      selectQuickRoute(match);
+  // Handle selecting an optimized transit route — apply to simulator form
+  const handleSelectRoute = useCallback((route: TransitRouteOption) => {
+    // Find a matching SA quick route for this transit port, or build a custom one
+    const match = SA_QUICK_ROUTES.find(r => r.port === route.transitPort);
+    if (match && selectedRoute) {
+      // Use the quick route but keep current destination
+      const adapted = {
+        ...match,
+        dest: selectedRoute.dest,
+        destCoords: selectedRoute.destCoords,
+        mineCoords: selectedRoute.mineCoords,
+        mine: selectedRoute.mine,
+      };
+      setSelectedRoute(adapted);
+      setCommodity(adapted.commodity);
+      setCustomRoute(false);
+      setBuyPoint('mine_gate');
+      setSellPoint('cif');
+      setSelectionPhase('done');
     }
-  }, []);
+  }, [selectedRoute]);
 
   // Corridor rendering helpers
   const buyIdx = buyPoint ? VISUAL_CORRIDOR.findIndex(p => p.key === buyPoint) : -1;
@@ -703,46 +720,63 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
                 </div>
               )}
 
-              {/* Route cards */}
+              {/* Transit route cards */}
               {optimization && optimization.routes.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500 mb-2">
-                    {optimization.routes.length} routes evaluated. Click to apply.
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500 mb-1">
+                    Best routes: {optimization.origin} → {optimization.destination}
+                  </p>
+                  <p className="text-xs text-gray-600 mb-2">
+                    {optimization.routes.length} transit port options evaluated. Click to apply.
                   </p>
                   {optimization.routes.map((route) => {
-                    const isBest = route.rank === optimization.bestRoute?.rank;
+                    const isBest = route.rank === optimization.bestByMargin?.rank;
+                    const isFastest = route.rank === optimization.bestBySpeed?.rank;
                     const marginPositive = route.margin >= 0;
 
                     return (
                       <button
-                        key={`${route.loadingPort}-${route.destination}-${route.transportMode}`}
+                        key={`${route.transitPort}-${route.transportMode}`}
                         onClick={() => handleSelectRoute(route)}
-                        className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                        className={`w-full text-left px-4 py-3.5 rounded-lg border transition-colors ${
                           isBest
                             ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
                             : 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
                         }`}
                       >
+                        {/* Top row: rank, port name, margin, days */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <span className={`text-xs font-bold w-6 ${isBest ? 'text-emerald-400' : 'text-gray-500'}`}>
                               #{route.rank}
                             </span>
                             <span className="text-sm text-white">
-                              {route.loadingPort}
-                              {route.destination !== 'N/A' && (
-                                <span className="text-gray-400"> &rarr; {route.destination}</span>
-                              )}
+                              via {route.transitPort}
+                              <span className="text-gray-500 ml-1">({route.transportMode})</span>
                             </span>
+                            {isBest && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded">BEST MARGIN</span>}
+                            {isFastest && !isBest && <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">FASTEST</span>}
                           </div>
                           <div className="flex items-center gap-4 text-sm">
                             <span className={`font-semibold ${marginPositive ? 'text-emerald-400' : 'text-red-400'}`}>
                               ${route.margin.toFixed(2)}/t
                             </span>
                             <span className="text-gray-500 text-xs">
-                              {route.transitDays}d
+                              {route.totalDays}d
                             </span>
                           </div>
+                        </div>
+                        {/* Bottom row: distance breakdown, freight */}
+                        <div className="flex items-center justify-between mt-1.5 ml-9">
+                          <span className="text-xs text-gray-500">
+                            {route.inlandDistKm.toLocaleString()}km {route.transportMode}
+                            {route.oceanDistNm > 0 && (
+                              <> → {route.oceanDistNm.toLocaleString()}nm sea</>
+                            )}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            Freight: ${route.oceanFreight.toFixed(2)}/t
+                          </span>
                         </div>
                       </button>
                     );
