@@ -125,7 +125,53 @@ export async function GET(request: NextRequest) {
     financing,
   });
 
-  // Calculate supply chain timeline
+  // Fetch dynamic supply chain data from platform DB
+  const { createAdminSupabaseClient: createAdmin } = await import('@/lib/supabase-server');
+  const admin = createAdmin();
+
+  // Port congestion from AIS data
+  let portCongestion: { level: string; vesselCount: number } | undefined;
+  try {
+    const { data: congestionData } = await admin
+      .from('port_congestion')
+      .select('vessels_at_port, vessels_anchored, congestion_level, harbours!harbour_id(name)')
+      .limit(50);
+
+    if (congestionData) {
+      const match = congestionData.find((d: any) => {
+        const h = d.harbours as any;
+        return h?.name?.toLowerCase().includes(loadingPort.toLowerCase().split(' ')[0]);
+      });
+      if (match) {
+        portCongestion = { level: match.congestion_level as string, vesselCount: match.vessels_at_port as number };
+      }
+    }
+  } catch {
+    // Non-critical — fall back to industry averages
+  }
+
+  // Average sea speed from AIS vessel positions
+  let avgSeaSpeed: number | undefined;
+  try {
+    const { data: speedData } = await admin
+      .from('vessel_positions')
+      .select('speed')
+      .gt('speed', 5)
+      .lt('speed', 20)
+      .gte('ship_type', 70)
+      .lt('ship_type', 90)
+      .limit(500);
+
+    if (speedData && speedData.length > 20) {
+      avgSeaSpeed = Math.round(
+        speedData.reduce((s: number, v: any) => s + (v.speed as number), 0) / speedData.length * 10
+      ) / 10;
+    }
+  } catch {
+    // Non-critical — fall back to 13 knots default
+  }
+
+  // Calculate supply chain timeline with dynamic data
   const timeline = calculateTimeline({
     mineCoords: mineLat && mineLng ? { lat: parseFloat(mineLat), lng: parseFloat(mineLng) } : undefined,
     portCoords: { lat: parseFloat(loadingLat), lng: parseFloat(loadingLng) },
@@ -138,6 +184,8 @@ export async function GET(request: NextRequest) {
     buyPoint,
     sellPoint,
     includePaymentTimeline: true,
+    portCongestion,
+    averageSeaSpeed: avgSeaSpeed,
   });
 
   return NextResponse.json({ ...simulation, timeline });

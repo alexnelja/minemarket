@@ -1,5 +1,51 @@
+/**
+ * PHASE 2 (FUTURE — when platform has 20+ completed deals):
+ *
+ * Replace industry averages with platform-derived durations:
+ *
+ * 1. LOADING TIME: Query deal_milestones for avg days between
+ *    'loaded' and 'departed_port' milestones, grouped by port.
+ *    SQL: SELECT port, AVG(departed.timestamp - loaded.timestamp) FROM ...
+ *
+ * 2. TRANSIT TIME: Query deal_milestones for avg days between
+ *    'departed_port' and 'arrived_port', grouped by route (port pair).
+ *
+ * 3. DISCHARGE TIME: Query deal_milestones for avg days between
+ *    'arrived_port' and 'delivered', grouped by destination port.
+ *
+ * 4. PAYMENT TIME: Query deals for avg days between
+ *    'delivered' status and 'escrow_released' status.
+ *
+ * 5. CUSTOMS TIME: Derive from deal document upload timestamps —
+ *    time between customs_declaration upload and next milestone.
+ *
+ * All data already captured in deal_milestones and deals tables.
+ * Need ~20 completed deals per route for statistical significance.
+ *
+ * Implementation: Create lib/platform-derived-timelines.ts that queries
+ * the DB and returns overrides for each segment. Merge with defaults
+ * using: platformValue || industryAverage.
+ */
+
 import type { GeoPoint } from './types';
 import { haversineDistance } from './distance';
+
+// Congestion-adjusted waiting times (based on AIS vessel count data)
+const CONGESTION_WAIT_DAYS: Record<string, number> = {
+  low: 1,
+  medium: 3,
+  high: 7,
+};
+
+// Port-specific loading rates (tonnes/day)
+const PORT_LOADING_RATES: Record<string, number> = {
+  'Richards Bay': 15000,     // RBCT coal terminal — world class, up to 20,000t/day
+  'Saldanha Bay': 18000,     // Iron ore terminal — very fast
+  'Durban': 8000,            // Multi-purpose — slower for bulk
+  'Port Elizabeth': 8000,    // General bulk
+  'Maputo': 6000,            // Older infrastructure
+  default: 10000,
+};
 
 export interface TimelineSegment {
   segment: string;
@@ -75,6 +121,9 @@ export interface TimelineParams {
   buyPoint: string;
   sellPoint: string;
   includePaymentTimeline?: boolean;
+  portCongestion?: { level: string; vesselCount: number };
+  loadingRateOverride?: number;  // Terminal-specific loading rate (t/day)
+  averageSeaSpeed?: number;      // AIS-derived average if available (knots)
 }
 
 export function calculateTimeline(params: TimelineParams): SupplyChainTimeline {
@@ -150,12 +199,32 @@ export function calculateTimeline(params: TimelineParams): SupplyChainTimeline {
     segments.push({ segment: 'stockpile_receival', label: 'Port receival & stockpiling', durationDays: PORT_OPERATIONS.stockpile_receival.days, method: 'industry_average', note: PORT_OPERATIONS.stockpile_receival.note });
     segments.push({ segment: 'quality_sampling', label: 'Quality sampling & analysis', durationDays: PORT_OPERATIONS.quality_sampling.days, method: 'industry_average', note: PORT_OPERATIONS.quality_sampling.note });
     segments.push({ segment: 'vessel_nomination', label: 'Vessel nomination', durationDays: PORT_OPERATIONS.vessel_nomination.days, method: 'industry_average', note: PORT_OPERATIONS.vessel_nomination.note });
-    segments.push({ segment: 'vessel_waiting', label: 'Vessel waiting for berth', durationDays: PORT_OPERATIONS.vessel_waiting.days, method: 'estimated', note: `${PORT_OPERATIONS.vessel_waiting.note}. Actual depends on ${portName} congestion.` });
+    // Vessel waiting — dynamic from port congestion data if available
+    const waitDays = params.portCongestion
+      ? CONGESTION_WAIT_DAYS[params.portCongestion.level] || 3
+      : PORT_OPERATIONS.vessel_waiting.days;
+    segments.push({
+      segment: 'vessel_waiting',
+      label: 'Vessel waiting for berth',
+      durationDays: waitDays,
+      method: params.portCongestion ? 'calculated' : 'estimated',
+      note: params.portCongestion
+        ? `AIS data: ${params.portCongestion.vesselCount} vessels at ${portName} (${params.portCongestion.level} congestion)`
+        : `${PORT_OPERATIONS.vessel_waiting.note}. No live congestion data for ${portName}.`,
+    });
 
-    // Loading time based on volume and loading rate
-    const loadingRate = 12000; // tonnes/day average for SA bulk terminals
+    // Loading time based on volume and port-specific loading rate
+    const loadingRate = params.loadingRateOverride
+      || PORT_LOADING_RATES[portName]
+      || PORT_LOADING_RATES.default;
     const loadingDays = Math.max(1, Math.ceil(volumeTonnes / loadingRate));
-    segments.push({ segment: 'vessel_loading', label: 'Vessel loading', durationDays: loadingDays, method: 'calculated', note: `${volumeTonnes.toLocaleString()}t at ~${loadingRate.toLocaleString()}t/day` });
+    segments.push({
+      segment: 'vessel_loading',
+      label: 'Vessel loading',
+      durationDays: loadingDays,
+      method: 'calculated',
+      note: `${volumeTonnes.toLocaleString()}t at ${loadingRate.toLocaleString()}t/day (${portName} rate)`,
+    });
 
     segments.push({ segment: 'customs_export', label: 'Export customs clearance', durationDays: PORT_OPERATIONS.customs_export.days, method: 'industry_average', note: PORT_OPERATIONS.customs_export.note });
     segments.push({ segment: 'documentation', label: 'Documentation (BOL, certificates)', durationDays: PORT_OPERATIONS.documentation.days, method: 'industry_average', note: PORT_OPERATIONS.documentation.note });
@@ -166,15 +235,17 @@ export function calculateTimeline(params: TimelineParams): SupplyChainTimeline {
     // Use haversine with sea route multiplier (haversineDistance returns nm)
     const distanceNm = haversineDistance(portCoords.lat, portCoords.lng, destinationCoords.lat, destinationCoords.lng) * 1.4;
 
-    const seaSpeed = 13; // knots average for bulk carrier
+    const seaSpeed = params.averageSeaSpeed || 13; // AIS-derived or default 13 knots
     const seaDays = Math.ceil(distanceNm / (seaSpeed * 24));
 
     segments.push({
       segment: 'ocean_transit',
       label: `Ocean transit to ${destinationName || 'destination'}`,
       durationDays: seaDays,
-      method: 'calculated',
-      note: `${Math.round(distanceNm).toLocaleString()} nm at ~${seaSpeed} knots`,
+      method: params.averageSeaSpeed ? 'calculated' : 'estimated',
+      note: params.averageSeaSpeed
+        ? `${Math.round(distanceNm).toLocaleString()} nm at ~${seaSpeed} knots (AIS fleet average)`
+        : `${Math.round(distanceNm).toLocaleString()} nm at ~${seaSpeed} knots (industry average)`,
     });
   }
 
@@ -198,4 +269,4 @@ export function calculateTimeline(params: TimelineParams): SupplyChainTimeline {
 }
 
 // Export constants for use elsewhere
-export { SA_RAIL_ROUTES, PORT_OPERATIONS, DISCHARGE_OPERATIONS, PAYMENT_TIMELINE };
+export { SA_RAIL_ROUTES, PORT_OPERATIONS, DISCHARGE_OPERATIONS, PAYMENT_TIMELINE, PORT_LOADING_RATES, CONGESTION_WAIT_DAYS };

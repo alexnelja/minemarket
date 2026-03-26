@@ -186,22 +186,27 @@ export function SimulatorClient({ indexPrices }: SimulatorClientProps) {
       const data = await res.json();
       setSimulation(data);
 
-      // Compute supply chain timeline alongside simulation
-      const route = selectedRoute;
-      const tl = calculateTimeline({
-        mineCoords: route?.mineCoords,
-        portCoords: route?.portCoords || { lat: -28.801, lng: 32.038 },
-        destinationCoords: route?.destCoords,
-        mineName: route?.mine,
-        portName: route?.port || 'Richards Bay',
-        destinationName: route?.dest,
-        transportMode: 'rail',
-        volumeTonnes: parseInt(volume) || 15000,
-        buyPoint: buyPoint || 'mine_gate',
-        sellPoint: sellPoint || 'cif',
-        includePaymentTimeline: true,
-      });
-      setTimeline(tl);
+      // Use server-side timeline (includes dynamic AIS/congestion data)
+      // Fall back to client-side calculation if API doesn't return timeline
+      if (data.timeline) {
+        setTimeline(data.timeline);
+      } else {
+        const route = selectedRoute;
+        const tl = calculateTimeline({
+          mineCoords: route?.mineCoords,
+          portCoords: route?.portCoords || { lat: -28.801, lng: 32.038 },
+          destinationCoords: route?.destCoords,
+          mineName: route?.mine,
+          portName: route?.port || 'Richards Bay',
+          destinationName: route?.dest,
+          transportMode: 'rail',
+          volumeTonnes: parseInt(volume) || 15000,
+          buyPoint: buyPoint || 'mine_gate',
+          sellPoint: sellPoint || 'cif',
+          includePaymentTimeline: true,
+        });
+        setTimeline(tl);
+      }
     } catch {
       setError('Failed to run simulation');
     } finally {
