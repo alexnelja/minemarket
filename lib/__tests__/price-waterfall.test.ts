@@ -114,7 +114,7 @@ describe('port charges lookup', () => {
       ...BASE_PARAMS,
       loadingPort: 'Unknown Port',
     });
-    const handlingStep = result.steps.find(s => s.label === 'Port handling');
+    const handlingStep = result.steps.find(s => s.label === 'Terminal handling');
     expect(handlingStep).toBeDefined();
     expect(handlingStep!.amount).toBe(-PORT_CHARGES.default.handling);
   });

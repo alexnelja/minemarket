@@ -37,14 +37,24 @@ const ROYALTY_RATES: Record<string, number> = {
   titanium: 0.03,     // ~3%
 };
 
-// Port handling charges (Transnet 2025/26 tariff book approximations, ZAR → USD at ~18.5)
-const PORT_CHARGES: Record<string, { handling: number; wharfage: number; storage_per_week: number }> = {
-  'Richards Bay':    { handling: 4.00, wharfage: 1.20, storage_per_week: 1.80 },
-  'Saldanha Bay':    { handling: 3.80, wharfage: 1.10, storage_per_week: 1.50 },
-  'Durban':          { handling: 4.50, wharfage: 1.40, storage_per_week: 2.00 },
-  'Port Elizabeth':  { handling: 4.20, wharfage: 1.30, storage_per_week: 1.70 },
-  'Maputo':          { handling: 5.00, wharfage: 1.60, storage_per_week: 2.20 },
-  default:           { handling: 4.50, wharfage: 1.30, storage_per_week: 1.80 },
+// Port charges (Transnet 2025/26 tariff book approx, ZAR → USD at ~18.5)
+// Includes: handling, wharfage, stevedoring, crosshaul, agency, security, customs broker
+const PORT_CHARGES: Record<string, {
+  handling: number;        // Terminal handling
+  wharfage: number;        // Port authority levy
+  stevedoring: number;     // Loading onto vessel
+  crosshaul: number;       // Stockpile to quayside
+  agency: number;          // Port agent fees (per tonne, amortized from flat ~$4K per call)
+  security: number;        // Port security levy
+  customs_broker: number;  // Export declaration / clearing agent
+  storage_per_week: number;
+}> = {
+  'Richards Bay':    { handling: 4.00, wharfage: 1.20, stevedoring: 3.00, crosshaul: 1.50, agency: 0.30, security: 0.10, customs_broker: 0.40, storage_per_week: 1.80 },
+  'Saldanha Bay':    { handling: 3.80, wharfage: 1.10, stevedoring: 2.80, crosshaul: 1.20, agency: 0.30, security: 0.10, customs_broker: 0.40, storage_per_week: 1.50 },
+  'Durban':          { handling: 4.50, wharfage: 1.40, stevedoring: 3.50, crosshaul: 2.00, agency: 0.35, security: 0.12, customs_broker: 0.45, storage_per_week: 2.00 },
+  'Port Elizabeth':  { handling: 4.20, wharfage: 1.30, stevedoring: 3.20, crosshaul: 1.80, agency: 0.30, security: 0.10, customs_broker: 0.40, storage_per_week: 1.70 },
+  'Maputo':          { handling: 5.00, wharfage: 1.60, stevedoring: 3.80, crosshaul: 2.20, agency: 0.50, security: 0.15, customs_broker: 0.60, storage_per_week: 2.20 },
+  default:           { handling: 4.50, wharfage: 1.30, stevedoring: 3.20, crosshaul: 1.80, agency: 0.35, security: 0.10, customs_broker: 0.45, storage_per_week: 1.80 },
 };
 
 // Inland transport rates
@@ -128,7 +138,19 @@ export function calculatePriceWaterfall(params: WaterfallParams): PriceWaterfall
     amount: -freightPerTonne,
     subtotal,
     category: 'freight',
-    note: `${loadingPort} → destination`,
+    note: `${loadingPort} → destination (includes bunker, hire, canal fees)`,
+    editable: true,
+  });
+
+  // Discharge port fees (buyer-side but included in CIF)
+  const dischargeFees = 4.50; // Typical discharge port handling $/t
+  subtotal -= dischargeFees;
+  steps.push({
+    label: 'Discharge port fees',
+    amount: -dischargeFees,
+    subtotal,
+    category: 'freight',
+    note: 'Destination port handling, wharfage, stevedoring',
     editable: true,
   });
 
@@ -143,30 +165,86 @@ export function calculatePriceWaterfall(params: WaterfallParams): PriceWaterfall
     note: `Free On Board at ${loadingPort}`,
   });
 
-  // Step 5: Port handling
+  // Port costs — all charges between FOB and FCA Port Gate
   const portCharges = PORT_CHARGES[loadingPort] || PORT_CHARGES.default;
-  subtotal -= portCharges.handling;
+
+  // Stevedoring (loading cargo onto vessel)
+  subtotal -= portCharges.stevedoring;
   steps.push({
-    label: 'Port handling',
-    amount: -portCharges.handling,
+    label: 'Stevedoring',
+    amount: -portCharges.stevedoring,
     subtotal,
     category: 'port',
-    note: `${loadingPort} terminal handling charges`,
+    note: 'Loading cargo onto vessel (grab/conveyor)',
     editable: true,
   });
 
-  // Step 6: Wharfage
+  // Crosshaul (moving from stockpile to quayside)
+  subtotal -= portCharges.crosshaul;
+  steps.push({
+    label: 'Crosshaul',
+    amount: -portCharges.crosshaul,
+    subtotal,
+    category: 'port',
+    note: 'Transport from stockpile to ship-side at terminal',
+    editable: true,
+  });
+
+  // Terminal handling
+  subtotal -= portCharges.handling;
+  steps.push({
+    label: 'Terminal handling',
+    amount: -portCharges.handling,
+    subtotal,
+    category: 'port',
+    note: `${loadingPort} terminal handling charges (TPT)`,
+    editable: true,
+  });
+
+  // Wharfage
   subtotal -= portCharges.wharfage;
   steps.push({
     label: 'Wharfage',
     amount: -portCharges.wharfage,
     subtotal,
     category: 'port',
-    note: 'Transnet port authority wharfage levy',
+    note: 'Transnet National Ports Authority wharfage levy',
     editable: true,
   });
 
-  // Step 7: Export royalty
+  // Port agency fees
+  subtotal -= portCharges.agency;
+  steps.push({
+    label: 'Port agency',
+    amount: -portCharges.agency,
+    subtotal,
+    category: 'port',
+    note: 'Ship agent fees (amortized from ~$4K flat per vessel call)',
+    editable: true,
+  });
+
+  // Port security levy
+  subtotal -= portCharges.security;
+  steps.push({
+    label: 'Port security',
+    amount: -portCharges.security,
+    subtotal,
+    category: 'port',
+    note: 'ISPS port security levy',
+  });
+
+  // Customs broker / clearing agent
+  subtotal -= portCharges.customs_broker;
+  steps.push({
+    label: 'Customs broker',
+    amount: -portCharges.customs_broker,
+    subtotal,
+    category: 'port',
+    note: 'Export declaration (SAD500) filing and clearing agent fees',
+    editable: true,
+  });
+
+  // Export royalty (MPRRA)
   const royaltyRate = ROYALTY_RATES[commodity] || 0.03;
   const royaltyCost = fobPrice * royaltyRate;
   subtotal -= royaltyCost;
@@ -179,14 +257,14 @@ export function calculatePriceWaterfall(params: WaterfallParams): PriceWaterfall
     editable: true,
   });
 
-  // Step 8: Surveyor / sampling
+  // Surveyor / sampling / inspection
   subtotal -= SURVEY_SAMPLING_PER_TONNE;
   steps.push({
     label: 'Surveyor & sampling',
     amount: -SURVEY_SAMPLING_PER_TONNE,
     subtotal,
     category: 'port',
-    note: 'Independent inspection and sampling at port',
+    note: 'Independent inspection, sampling, and draft survey at port',
   });
 
   // Step 9: Terminal storage (if applicable)
