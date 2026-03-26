@@ -32,12 +32,9 @@ export default async function ListingDetailPage({ params }: ListingDetailPagePro
     getListingVerifications(listing.id),
   ]);
 
-  // Increment view count (fire and forget)
+  // Increment view count atomically (fire and forget)
   const admin = createAdminSupabaseClient();
-  admin.from('listings')
-    .update({ view_count: (listing.view_count || 0) + 1 })
-    .eq('id', id)
-    .then(() => {});
+  void Promise.resolve(admin.rpc('increment_listing_views', { listing_id: id })).catch(() => {});
 
   const config = COMMODITY_CONFIG[listing.commodity_type];
 

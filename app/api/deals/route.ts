@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
       buyer_id: user.id,
       seller_id: listing.seller_id,
       commodity_type: listing.commodity_type,
+      commodity_subtype: listing.commodity_subtype || null,
       volume_tonnes: listing.volume_tonnes,
       agreed_price: listing.price_per_tonne,
       currency: listing.currency,

@@ -41,7 +41,11 @@ export async function GET(request: NextRequest) {
   const volumeTonnes = parseFloat(volumeRaw ?? '15000');
 
   if (isNaN(buyPrice) || buyPrice <= 0) {
-    return NextResponse.json({ error: 'buy_price must be a positive number' }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid buy price' }, { status: 400 });
+  }
+
+  if (isNaN(volumeTonnes) || volumeTonnes <= 0) {
+    return NextResponse.json({ error: 'Invalid volume' }, { status: 400 });
   }
 
   // Validate trade points

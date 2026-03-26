@@ -41,7 +41,7 @@ export async function getActiveListings(): Promise<ListingWithDetails[]> {
     .select(`
       *,
       mines!source_mine_id (name, region, location),
-      harbours!loading_port_id (name)
+      harbours!loading_port_id (name, location)
     `)
     .eq('status', 'active')
     .order('created_at', { ascending: false });
@@ -66,6 +66,7 @@ export async function getActiveListings(): Promise<ListingWithDetails[]> {
       mine_region: (mine?.region as string) ?? '',
       mine_location: parseGeoPoint(mine?.location) ?? { lng: 0, lat: 0 },
       harbour_name: (harbour?.name as string) ?? 'Unknown',
+      harbour_location: parseGeoPoint(harbour?.location) ?? { lng: 0, lat: 0 },
       seller_company: sellerMap.get(l.seller_id as string) ?? 'Unknown',
     } as ListingWithDetails;
   });

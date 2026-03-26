@@ -25,6 +25,7 @@ export interface User {
   country: string;
   kyc_status: KycStatus;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Harbour {
@@ -33,6 +34,7 @@ export interface Harbour {
   location: unknown;
   country: string;
   type: HarbourType;
+  updated_at?: string;
 }
 
 export interface Mine {
@@ -42,8 +44,9 @@ export interface Mine {
   country: string;
   region: string;
   commodities: CommodityType[];
-  nearest_harbour_id: string;
+  nearest_harbour_id: string | null;
   owner_id: string | null;
+  updated_at?: string;
 }
 
 export interface Route {
@@ -76,6 +79,7 @@ export interface Listing {
   price_breakdown: Record<string, unknown>[] | null;
   view_count?: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Requirement {
@@ -90,6 +94,7 @@ export interface Requirement {
   incoterm: string;
   status: RequirementStatus;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Deal {
@@ -109,8 +114,10 @@ export interface Deal {
   price_adjustment_rules: Record<string, unknown>;
   escrow_amount: number | null;
   escrow_status: EscrowStatus;
+  commodity_subtype: string | null;
   status: DealStatus;
   created_at: string;
+  updated_at?: string;
   second_accept_at: string | null;
 }
 
@@ -154,6 +161,69 @@ export interface Rating {
   communication: number;
   documentation: number;
   comment: string | null;
+  created_at: string;
+}
+
+export interface DealMessage {
+  id: string;
+  deal_id: string;
+  sender_id: string;
+  message: string;
+  message_type: string;
+  created_at: string;
+}
+
+export interface KycDocument {
+  id: string;
+  user_id: string;
+  doc_type: string;
+  file_url: string;
+  file_name: string | null;
+  uploaded_at: string;
+  expires_at: string | null;
+  verified: boolean;
+}
+
+export interface VerificationRequest {
+  id: string;
+  deal_id: string;
+  inspector_type: string;
+  inspector_company: string | null;
+  inspector_email: string | null;
+  status: string;
+  requested_at: string;
+  completed_at: string | null;
+  results: Record<string, unknown> | null;
+  report_file_url: string | null;
+  notes: string | null;
+  requested_by: string;
+}
+
+export interface CommodityPrice {
+  id: string;
+  commodity: string;
+  price_usd: number;
+  unit: string;
+  source: string;
+  period: string | null;
+  recorded_at: string;
+}
+
+export interface DealSimulationRecord {
+  id: string;
+  user_id: string | null;
+  commodity: string;
+  commodity_subtype: string | null;
+  mine_gate_price: number;
+  volume_tonnes: number;
+  loading_port: string | null;
+  destination: string | null;
+  transport_mode: string | null;
+  cif_result: number | null;
+  margin_result: number | null;
+  index_price_used: number | null;
+  financing_included: boolean;
+  hedging_included: boolean;
   created_at: string;
 }
 

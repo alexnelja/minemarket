@@ -31,6 +31,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const admin = createAdminSupabaseClient();
   const { data: senderProfile } = await admin.from('users').select('company_name').eq('id', user.id).single();
   const senderName = senderProfile?.company_name || 'A trader';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dashboard-five-cyan-36.vercel.app';
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         <div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;background:#0f172a;color:#e2e8f0;padding:32px;border-radius:12px;">
           <h2 style="color:#f59e0b;font-size:18px;margin:0 0 8px;">You've been invited to a deal</h2>
           <p style="color:#94a3b8;font-size:13px;margin:0 0 20px;">${escapeHtml(senderName)} wants to work with you on a ${escapeHtml(deal.commodity_type)} deal through MineMarket.</p>
-          <a href="https://dashboard-five-cyan-36.vercel.app/deals/${dealId}" style="display:block;text-align:center;background:#f59e0b;color:#000;font-weight:600;font-size:14px;padding:12px;border-radius:8px;text-decoration:none;">View Deal</a>
+          <a href="${appUrl}/deals/${dealId}" style="display:block;text-align:center;background:#f59e0b;color:#000;font-weight:600;font-size:14px;padding:12px;border-radius:8px;text-decoration:none;">View Deal</a>
           <p style="color:#475569;font-size:11px;text-align:center;margin-top:24px;">MineMarket · The deal workspace for commodity traders</p>
         </div>
       `,

@@ -70,6 +70,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (RESEND_API_KEY) {
       const admin = createAdminSupabaseClient();
       const { data: profile } = await admin.from('users').select('company_name').eq('id', user.id).single();
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dashboard-five-cyan-36.vercel.app';
 
       await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 ${notes ? `<p style="font-size:13px;color:#94a3b8;">Notes: ${escapeHtml(notes)}</p>` : ''}
               </div>
               <p style="color:#94a3b8;font-size:12px;">Please upload your report and results to the MineMarket platform once complete.</p>
-              <a href="https://dashboard-five-cyan-36.vercel.app/deals/${dealId}" style="display:block;text-align:center;background:#f59e0b;color:#000;font-weight:600;font-size:14px;padding:12px;border-radius:8px;text-decoration:none;margin-top:16px;">View Deal</a>
+              <a href="${appUrl}/deals/${dealId}" style="display:block;text-align:center;background:#f59e0b;color:#000;font-weight:600;font-size:14px;padding:12px;border-radius:8px;text-decoration:none;margin-top:16px;">View Deal</a>
             </div>
           `,
         }),

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createAdminSupabaseClient } from '@/lib/supabase-server';
 import { estimatePrice } from '@/lib/price-engine';
 import { getSubtypeByKey } from '@/lib/commodity-subtypes';
 import { parseGeoPoint } from '@/lib/geo';
@@ -37,10 +38,29 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Use a default index price and grade based on subtype.
-  // In production this would come from a price feed / database.
-  // For now we use placeholder index values per commodity.
-  const indexDefaults = getIndexDefaults(commodity, subtype);
+  // Fetch latest index price from DB, falling back to hardcoded defaults
+  const fallbackDefaults = getIndexDefaults(commodity, subtype);
+  let indexDefaults = fallbackDefaults;
+  try {
+    const admin = createAdminSupabaseClient();
+    const { data: priceData } = await admin
+      .from('commodity_prices')
+      .select('price_usd, recorded_at')
+      .eq('commodity', commodity)
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (priceData?.price_usd) {
+      indexDefaults = {
+        ...fallbackDefaults,
+        indexPrice: priceData.price_usd,
+        indexDate: priceData.recorded_at?.slice(0, 10) ?? fallbackDefaults.indexDate,
+      };
+    }
+  } catch {
+    // Fall back to hardcoded defaults
+  }
 
   // If grade not provided, fall back to the index grade (estimate at reference quality)
   const effectiveGrade = (!isNaN(grade) && grade > 0) ? grade : indexDefaults.indexGrade;
