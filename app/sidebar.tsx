@@ -8,6 +8,8 @@ import { useRouter } from 'next/navigation';
 
 const primaryItems = [
   { label: 'Deals', href: '/deals', icon: DealsIcon },
+  { label: 'Positions', href: '/positions', icon: PositionsIcon },
+  { label: 'Contracts', href: '/contracts', icon: ContractsIcon },
 ];
 
 const marketItems = [
@@ -25,6 +27,8 @@ const secondaryItems = [
 
 const mobileItems = [
   { label: 'Deals', href: '/deals', icon: DealsIcon },
+  { label: 'Positions', href: '/positions', icon: PositionsIcon },
+  { label: 'Contracts', href: '/contracts', icon: ContractsIcon },
   { label: 'Map', href: '/map', icon: MapIcon },
   { label: 'Listings', href: '/marketplace', icon: MarketplaceIcon },
   { label: 'Prices', href: '/trading', icon: TradingIcon },
@@ -256,6 +260,27 @@ function SimulatorIcon({ active }: { active: boolean }) {
       <path d="M4 10V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M8 10V6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M12 10V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PositionsIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={active ? 'text-white' : 'text-gray-500'}>
+      <path d="M2 14V6H5V14H2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M6.5 14V2H9.5V14H6.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M11 14V8H14V14H11Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ContractsIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={active ? 'text-white' : 'text-gray-500'}>
+      <rect x="2" y="1" width="12" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5 5H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5 8H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5 11H9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
