@@ -1,4 +1,4 @@
-# Dashboard — MineMarket Platform
+# MineMarket
 
 ## Overview
 

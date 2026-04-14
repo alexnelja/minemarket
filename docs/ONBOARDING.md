@@ -18,8 +18,8 @@ Primary commodities: **chrome and manganese** from South Africa.
 
 ```bash
 # 1. Clone
-git clone https://github.com/alexnelja/dashboard.git
-cd dashboard
+git clone https://github.com/alexnelja/minemarket.git
+cd minemarket
 
 # 2. Install
 npm install
@@ -55,7 +55,7 @@ Password: testpass123456
 ## Project Structure
 
 ```
-dashboard/
+minemarket/
 ├── app/                    # Next.js App Router pages & API routes
 │   ├── (auth)/             # Login, signup (public)
 │   ├── deals/              # Deal workspace

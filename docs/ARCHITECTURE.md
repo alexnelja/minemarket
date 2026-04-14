@@ -6,8 +6,7 @@
 
 MineMarket is a deal workspace and marketplace for bulk minerals, connecting SA mines, traders, and international buyers. Built with Next.js 16 (App Router), Supabase (PostgreSQL + PostGIS), and Mapbox GL JS.
 
-**Live:** dashboard-five-cyan-36.vercel.app
-**Repo:** github.com/alexnelja/dashboard
+**Repo:** github.com/alexnelja/minemarket
 
 ---
 
