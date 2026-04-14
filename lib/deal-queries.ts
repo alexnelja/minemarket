@@ -133,6 +133,30 @@ export async function getDealDocuments(dealId: string): Promise<DealDocument[]> 
   return data as DealDocument[];
 }
 
+export interface VerificationRequestRow {
+  id: string;
+  deal_id: string;
+  inspector_type: string;
+  inspector_company: string | null;
+  status: string;
+  requested_at: string;
+  completed_at: string | null;
+  results: Record<string, unknown> | null;
+  report_file_url: string | null;
+}
+
+export async function getDealVerificationRequests(dealId: string): Promise<VerificationRequestRow[]> {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from('verification_requests')
+    .select('id, deal_id, inspector_type, inspector_company, status, requested_at, completed_at, results, report_file_url')
+    .eq('deal_id', dealId)
+    .order('completed_at', { ascending: false, nullsFirst: false });
+
+  if (error || !data) return [];
+  return data as VerificationRequestRow[];
+}
+
 export async function getDealRatings(dealId: string): Promise<Rating[]> {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase

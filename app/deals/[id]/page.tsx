@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireAuth } from '@/lib/auth';
-import { getDealById, getDealMilestones, getDealDocuments, getDealRatings } from '@/lib/deal-queries';
+import { getDealById, getDealMilestones, getDealDocuments, getDealRatings, getDealVerificationRequests } from '@/lib/deal-queries';
 import { COMMODITY_CONFIG } from '@/lib/types';
 import type { Deal } from '@/lib/types';
 import { formatCurrency, timeAgo } from '@/lib/format';
@@ -37,11 +37,19 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
   const deal = await getDealById(id, user.id);
   if (!deal) notFound();
 
-  const [milestones, documents, ratings] = await Promise.all([
+  const [milestones, documents, ratings, verificationRequests] = await Promise.all([
     getDealMilestones(id),
     getDealDocuments(id),
     getDealRatings(id),
+    getDealVerificationRequests(id),
   ]);
+
+  // Latest completed lab assay with structured results
+  const latestLabAssay = verificationRequests.find(
+    (r) => r.status === 'completed' && r.results && typeof r.results === 'object'
+      && 'assay' in (r.results as Record<string, unknown>)
+  );
+  const labAssayData = (latestLabAssay?.results as { assay?: Record<string, number> } | undefined)?.assay ?? null;
 
   const config = COMMODITY_CONFIG[deal.commodity_type];
   const isBuyer = deal.buyer_id === user.id;
@@ -53,19 +61,19 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
   // Compute platform verification
   const platformVerification = verifyDealDocuments(deal as Deal, documents);
 
-  // Compute spec comparison for delivered+ deals
-  const showSpecComparison = ['delivered', 'escrow_released', 'completed'].includes(deal.status);
+  // Compute spec comparison once lab data is available (or post-delivery).
+  // Uses actual assay values from the latest completed lab verification if present;
+  // otherwise waits — no placeholder comparison against targets.
+  const showSpecComparison = ['delivered', 'escrow_released', 'completed'].includes(deal.status)
+    || labAssayData != null;
   const specComparison = showSpecComparison
     && deal.spec_tolerances
     && Object.keys(deal.spec_tolerances).length > 0
+    && labAssayData
     ? compareSpecs(
         deal.spec_tolerances as Record<string, SpecTolerance>,
         (deal.price_adjustment_rules ?? {}) as Record<string, PriceAdjustmentRule>,
-        Object.fromEntries(
-          Object.entries(deal.spec_tolerances as Record<string, SpecTolerance>).map(
-            ([k, v]) => [k, v.target]
-          )
-        ),
+        labAssayData,
       )
     : null;
 
@@ -195,10 +203,18 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
               />
             )}
 
-            {/* Spec comparison for delivered+ deals */}
+            {/* Spec comparison — shown once lab assay results are uploaded */}
             {specComparison && specComparison.results.length > 0 && (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-                <h2 className="text-lg font-semibold text-white mb-4">Spec Comparison</h2>
+                <div className="flex items-baseline justify-between mb-4">
+                  <h2 className="text-lg font-semibold text-white">Spec Comparison</h2>
+                  {latestLabAssay?.inspector_company && (
+                    <p className="text-[11px] text-gray-500">
+                      Source: {latestLabAssay.inspector_company}
+                      {latestLabAssay.completed_at && ` · ${new Date(latestLabAssay.completed_at).toLocaleDateString()}`}
+                    </p>
+                  )}
+                </div>
                 {specComparison.hasRejection && (
                   <div className="mb-4 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
                     Material rejected &mdash; one or more fields outside tolerance

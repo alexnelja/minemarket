@@ -9,15 +9,34 @@ export async function POST(request: NextRequest) {
   const inspectorName = formData.get('inspector_name') as string;
   const company = formData.get('company') as string;
   const reportType = formData.get('report_type') as string;
+  const commodity = formData.get('commodity') as string | null;
+  const assayDataRaw = formData.get('assay_data') as string | null;
 
   if (!file || !dealRef || !inspectorName || !company) {
-    return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
+    return NextResponse.json({ error: 'Deal reference, inspector, company and file are required' }, { status: 400 });
+  }
+
+  // Parse optional assay data
+  let assayData: Record<string, number> | null = null;
+  if (assayDataRaw) {
+    try {
+      const parsed = JSON.parse(assayDataRaw);
+      if (parsed && typeof parsed === 'object') {
+        assayData = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          const n = typeof v === 'number' ? v : Number(v);
+          if (!Number.isNaN(n)) assayData[k] = n;
+        }
+      }
+    } catch {
+      return NextResponse.json({ error: 'Invalid assay data' }, { status: 400 });
+    }
   }
 
   // Find the deal by reference code prefix
   const { data: deals } = await admin
     .from('deals')
-    .select('id, buyer_id, seller_id')
+    .select('id, buyer_id, seller_id, commodity_type')
     .ilike('id', `${dealRef}%`)
     .limit(1);
 
@@ -26,6 +45,13 @@ export async function POST(request: NextRequest) {
   }
 
   const deal = deals[0];
+
+  // If caller declared a commodity, it must match the deal
+  if (commodity && commodity !== deal.commodity_type) {
+    return NextResponse.json({
+      error: `Commodity mismatch: this deal is ${deal.commodity_type}, you selected ${commodity}`,
+    }, { status: 400 });
+  }
 
   // Upload file to storage
   const filePath = `deals/${deal.id}/lab-${Date.now()}-${file.name}`;
@@ -47,11 +73,43 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: docError.message }, { status: 500 });
   }
 
-  // Update verification request if one exists
-  await admin.from('verification_requests')
-    .update({ status: 'completed', completed_at: new Date().toISOString(), inspector_company: company })
+  // Find an existing pending/in_progress verification request to complete,
+  // otherwise create a new completed one so the assay data is captured.
+  const { data: existing } = await admin
+    .from('verification_requests')
+    .select('id')
     .eq('deal_id', deal.id)
-    .eq('status', 'pending');
+    .in('status', ['pending', 'assigned', 'in_progress'])
+    .order('requested_at', { ascending: false })
+    .limit(1);
+
+  const resultsPayload = {
+    inspector_name: inspectorName,
+    report_type: reportType,
+    ...(assayData ? { assay: assayData } : {}),
+  };
+
+  if (existing && existing.length > 0) {
+    await admin.from('verification_requests')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        inspector_company: company,
+        report_file_url: filePath,
+        results: resultsPayload,
+      })
+      .eq('id', existing[0].id);
+  } else {
+    await admin.from('verification_requests').insert({
+      deal_id: deal.id,
+      inspector_type: reportType === 'draft_survey' ? 'draft_survey' : 'lab_assay',
+      inspector_company: company,
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      report_file_url: filePath,
+      results: resultsPayload,
+    });
+  }
 
   return NextResponse.json({ success: true });
 }
