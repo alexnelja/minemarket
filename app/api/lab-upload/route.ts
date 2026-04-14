@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabaseClient } from '@/lib/supabase-server';
 import { parseAssayData, buildResultsPayload, inferInspectorType } from '@/lib/lab-upload-parse';
+import { compareSpecs } from '@/lib/spec-comparison';
+import type { SpecTolerance, PriceAdjustmentRule } from '@/lib/spec-comparison';
+import { formatLabSummary } from '@/lib/lab-summary';
+import { buildLabNotificationEmail } from '@/lib/lab-notification-email';
 
 export async function POST(request: NextRequest) {
   const admin = createAdminSupabaseClient();
@@ -27,7 +31,7 @@ export async function POST(request: NextRequest) {
   // Find the deal by reference code prefix
   const { data: deals } = await admin
     .from('deals')
-    .select('id, buyer_id, seller_id, commodity_type')
+    .select('id, buyer_id, seller_id, commodity_type, volume_tonnes, spec_tolerances, price_adjustment_rules')
     .ilike('id', `${dealRef}%`)
     .limit(1);
 
@@ -102,5 +106,77 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Fire-and-forget notification email to both parties (if assay data is present)
+  if (assayData && deal.spec_tolerances && Object.keys(deal.spec_tolerances).length > 0) {
+    notifyDealParties({
+      admin,
+      deal,
+      assayData,
+      inspectorCompany: company,
+    }).catch(() => {});
+  }
+
   return NextResponse.json({ success: true });
+}
+
+type DealForNotify = {
+  id: string;
+  buyer_id: string;
+  seller_id: string;
+  commodity_type: string;
+  volume_tonnes: number;
+  spec_tolerances: Record<string, SpecTolerance> | null;
+  price_adjustment_rules: Record<string, PriceAdjustmentRule> | null;
+};
+
+async function notifyDealParties(args: {
+  admin: ReturnType<typeof createAdminSupabaseClient>;
+  deal: DealForNotify;
+  assayData: Record<string, number>;
+  inspectorCompany: string;
+}) {
+  const RESEND_API_KEY = process.env.RESEND_API_KEY;
+  if (!RESEND_API_KEY) return;
+
+  const { admin, deal, assayData, inspectorCompany } = args;
+
+  const comparison = compareSpecs(
+    deal.spec_tolerances ?? {},
+    deal.price_adjustment_rules ?? {},
+    assayData,
+  );
+  const labSummary = formatLabSummary(comparison);
+  if (!labSummary) return;
+
+  const [buyerRes, sellerRes] = await Promise.all([
+    admin.auth.admin.getUserById(deal.buyer_id),
+    admin.auth.admin.getUserById(deal.seller_id),
+  ]);
+  const recipients = [buyerRes.data.user?.email, sellerRes.data.user?.email].filter(
+    (e): e is string => !!e,
+  );
+  if (recipients.length === 0) return;
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dashboard-five-cyan-36.vercel.app';
+  const { subject, html } = buildLabNotificationEmail({
+    deal: {
+      id: deal.id,
+      commodityType: deal.commodity_type,
+      volumeTonnes: deal.volume_tonnes,
+    },
+    inspectorCompany,
+    labSummary,
+    appUrl,
+  });
+
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
+    body: JSON.stringify({
+      from: 'MineMarket <onboarding@resend.dev>',
+      to: recipients,
+      subject,
+      html,
+    }),
+  });
 }
