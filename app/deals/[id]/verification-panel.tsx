@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PlatformVerification } from '@/lib/platform-verification';
+import type { SpecComparisonSummary } from '@/lib/spec-comparison';
+import { formatLabSummary } from '@/lib/lab-summary';
+import { SPEC_LABELS } from '@/lib/spec-fields';
 
 const INSPECTOR_TYPES = [
   { key: 'lab_assay', label: 'Lab Assay / Analysis', desc: 'Independent lab testing of material spec (Cr₂O₃, Fe, moisture, etc.)' },
@@ -23,9 +26,12 @@ const KNOWN_LABS = [
 interface VerificationPanelProps {
   dealId: string;
   platformVerification: PlatformVerification;
+  specComparison?: SpecComparisonSummary | null;
+  labSource?: { company: string | null; completedAt: string | null } | null;
 }
 
-export function VerificationPanel({ dealId, platformVerification }: VerificationPanelProps) {
+export function VerificationPanel({ dealId, platformVerification, specComparison, labSource }: VerificationPanelProps) {
+  const labSummary = formatLabSummary(specComparison ?? null);
   const router = useRouter();
   const [requests, setRequests] = useState<Record<string, unknown>[]>([]);
   const [showRequest, setShowRequest] = useState(false);
@@ -101,6 +107,60 @@ export function VerificationPanel({ dealId, platformVerification }: Verification
           ))}
         </div>
       </div>
+
+      {/* Lab Assay Results */}
+      {labSummary && specComparison && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Lab Assay Results</h3>
+            {labSource?.company && (
+              <span className="text-[10px] text-gray-500">
+                {labSource.company}
+                {labSource.completedAt && ` · ${new Date(labSource.completedAt).toLocaleDateString()}`}
+              </span>
+            )}
+          </div>
+
+          <div className={`mb-4 px-3 py-2 rounded-lg text-sm border ${
+            labSummary.tone === 'reject' ? 'bg-red-500/10 border-red-500/20 text-red-400'
+            : labSummary.tone === 'penalty' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+            : labSummary.tone === 'bonus' ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+          }`}>
+            <div className="flex items-center justify-between gap-3">
+              <span>{labSummary.headline}</span>
+              {labSummary.adjustmentLabel && (
+                <span className="font-semibold">{labSummary.adjustmentLabel}</span>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            {specComparison.results.map((r) => {
+              const color =
+                r.status === 'within_spec' ? 'text-emerald-400'
+                : r.status === 'bonus' ? 'text-blue-400'
+                : r.status === 'penalty' ? 'text-amber-400'
+                : 'text-red-400';
+              const label =
+                r.status === 'within_spec' ? 'OK'
+                : r.status === 'bonus' ? 'Bonus'
+                : r.status === 'penalty' ? 'Penalty'
+                : 'Reject';
+              return (
+                <div key={r.field} className="flex items-center justify-between text-xs bg-gray-950 rounded-lg px-3 py-2">
+                  <span className="text-white">{SPEC_LABELS[r.field] ?? r.field}</span>
+                  <div className="flex items-center gap-4">
+                    <span className="text-gray-500">target {r.target.toFixed(2)}</span>
+                    <span className="text-white">actual {r.actual.toFixed(2)}</span>
+                    <span className={`font-medium ${color}`}>{label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Independent Verification Requests */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">

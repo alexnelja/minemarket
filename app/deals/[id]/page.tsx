@@ -297,7 +297,15 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
                 Verification & Inspection
               </summary>
               <div className="px-6 pb-6">
-                <VerificationPanel dealId={deal.id} platformVerification={platformVerification} />
+                <VerificationPanel
+                  dealId={deal.id}
+                  platformVerification={platformVerification}
+                  specComparison={specComparison}
+                  labSource={latestLabAssay ? {
+                    company: latestLabAssay.inspector_company,
+                    completedAt: latestLabAssay.completed_at,
+                  } : null}
+                />
               </div>
             </details>
             <DocumentUpload
