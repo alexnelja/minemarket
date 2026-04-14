@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSupabaseClient } from '@/lib/supabase-server';
+import { parseAssayData, buildResultsPayload, inferInspectorType } from '@/lib/lab-upload-parse';
 
 export async function POST(request: NextRequest) {
   const admin = createAdminSupabaseClient();
@@ -17,21 +18,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Parse optional assay data
-  let assayData: Record<string, number> | null = null;
-  if (assayDataRaw) {
-    try {
-      const parsed = JSON.parse(assayDataRaw);
-      if (parsed && typeof parsed === 'object') {
-        assayData = {};
-        for (const [k, v] of Object.entries(parsed)) {
-          const n = typeof v === 'number' ? v : Number(v);
-          if (!Number.isNaN(n)) assayData[k] = n;
-        }
-      }
-    } catch {
-      return NextResponse.json({ error: 'Invalid assay data' }, { status: 400 });
-    }
+  const parsedAssay = parseAssayData(assayDataRaw);
+  if (parsedAssay === 'invalid') {
+    return NextResponse.json({ error: 'Invalid assay data' }, { status: 400 });
   }
+  const assayData = parsedAssay?.data ?? null;
 
   // Find the deal by reference code prefix
   const { data: deals } = await admin
@@ -83,11 +74,11 @@ export async function POST(request: NextRequest) {
     .order('requested_at', { ascending: false })
     .limit(1);
 
-  const resultsPayload = {
-    inspector_name: inspectorName,
-    report_type: reportType,
-    ...(assayData ? { assay: assayData } : {}),
-  };
+  const resultsPayload = buildResultsPayload({
+    inspectorName,
+    reportType,
+    assay: assayData,
+  });
 
   if (existing && existing.length > 0) {
     await admin.from('verification_requests')
@@ -102,7 +93,7 @@ export async function POST(request: NextRequest) {
   } else {
     await admin.from('verification_requests').insert({
       deal_id: deal.id,
-      inspector_type: reportType === 'draft_survey' ? 'draft_survey' : 'lab_assay',
+      inspector_type: inferInspectorType(reportType),
       inspector_company: company,
       status: 'completed',
       completed_at: new Date().toISOString(),
