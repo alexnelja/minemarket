@@ -19,3 +19,7 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 .worktrees/
+
+# claude code tooling
+.claude/
+docs/superpowers/

@@ -17,6 +17,7 @@ const marketItems = [
   { label: 'Listings', href: '/marketplace', icon: MarketplaceIcon },
   { label: 'Prices', href: '/trading', icon: TradingIcon },
   { label: 'Simulator', href: '/simulator', icon: SimulatorIcon },
+  { label: 'Scenarios', href: '/scenarios', icon: ScenariosIcon },
 ];
 
 const secondaryItems = [
@@ -41,7 +42,7 @@ const mobileItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const isMarketActive = pathname.startsWith('/map') || pathname.startsWith('/marketplace') || pathname.startsWith('/trading') || pathname.startsWith('/simulator');
+  const isMarketActive = pathname.startsWith('/map') || pathname.startsWith('/marketplace') || pathname.startsWith('/trading') || pathname.startsWith('/simulator') || pathname.startsWith('/scenarios');
   const [marketOpen, setMarketOpen] = useState(true);
 
   function isActive(href: string) {
@@ -269,6 +270,17 @@ function SimulatorIcon({ active }: { active: boolean }) {
       <path d="M4 10V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M8 10V6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       <path d="M12 10V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ScenariosIcon({ active }: { active: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={active ? 'text-white' : 'text-gray-500'}>
+      <path d="M2 3H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M2 7H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M2 11H7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="13" cy="11" r="2" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
 }

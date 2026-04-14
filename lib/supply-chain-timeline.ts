@@ -129,14 +129,49 @@ const ROAD_SPEED = 500; // ~60km/h for 8h driving/day
 
 // SA-specific route data (research-backed estimates)
 const SA_RAIL_ROUTES: Record<string, { distanceKm: number; railType: keyof typeof RAIL_SPEEDS; note: string }> = {
-  'Steelpoort Chrome→Richards Bay': { distanceKm: 620, railType: 'mainline', note: 'Via Belfast, Ogies, Coal Line junction to RB' },
-  'Steelpoort Chrome→Durban': { distanceKm: 550, railType: 'mainline', note: 'Via Ermelo, Natal mainline' },
-  'Steelpoort Chrome→Maputo': { distanceKm: 380, railType: 'mainline', note: 'Via Maputo Corridor (Belfast→Komatipoort)' },
-  'Hotazel Manganese→Saldanha Bay': { distanceKm: 861, railType: 'heavy_haul', note: 'OREX Line (Sishen junction to Saldanha)' },
-  'Hotazel Manganese→Port Elizabeth': { distanceKm: 1050, railType: 'mainline', note: 'Cape Corridor via De Aar, Graaff-Reinet' },
-  'Hotazel Manganese→Durban': { distanceKm: 1100, railType: 'mainline', note: 'Via Kimberley, Bloemfontein, Natal' },
-  'Sishen Iron Ore→Saldanha Bay': { distanceKm: 861, railType: 'heavy_haul', note: 'OREX Line — dedicated iron ore' },
-  'Waterberg Coal→Richards Bay': { distanceKm: 550, railType: 'mainline', note: 'Via Ogies, Coal Line' },
+  // ── Chrome (Bushveld Complex) ─────────────────────────────────────────
+  'Steelpoort Chrome→Richards Bay':  { distanceKm: 620, railType: 'mainline', note: 'NorthCor via Belfast, Ogies to Coal Line' },
+  'Steelpoort Chrome→Durban':       { distanceKm: 550, railType: 'mainline', note: 'Via Ermelo, Natal mainline' },
+  'Steelpoort Chrome→Maputo':       { distanceKm: 380, railType: 'mainline', note: 'Maputo Corridor (Belfast→Komatipoort→Ressano Garcia)' },
+  'Middelburg Chrome→Richards Bay': { distanceKm: 520, railType: 'mainline', note: 'NorthCor via Ogies to Coal Line' },
+  'Middelburg Chrome→Maputo':       { distanceKm: 450, railType: 'mainline', note: 'Maputo Corridor via Nelspruit' },
+  'Middelburg Chrome→Durban':       { distanceKm: 500, railType: 'mainline', note: 'Via Ermelo, Natal mainline' },
+  'Rustenburg Chrome→Maputo':       { distanceKm: 520, railType: 'mainline', note: 'Maputo Corridor via Pretoria, Nelspruit' },
+  'Rustenburg Chrome→Richards Bay': { distanceKm: 700, railType: 'mainline', note: 'NorthCor via Pretoria, Ogies to Coal Line' },
+  'Rustenburg Chrome→Durban':       { distanceKm: 620, railType: 'mainline', note: 'Via Germiston, Natal mainline' },
+
+  // ── Manganese (Kalahari Basin) ────────────────────────────────────────
+  'Hotazel Manganese→Saldanha Bay':    { distanceKm: 861, railType: 'heavy_haul', note: 'Hotazel→Sishen junction→OREX Line to Saldanha MPT' },
+  'Hotazel Manganese→Port Elizabeth':  { distanceKm: 1050, railType: 'mainline', note: 'Cape Corridor via De Aar (legacy terminal, 4 Mtpa)' },
+  'Hotazel Manganese→Ngqura':         { distanceKm: 1003, railType: 'mainline', note: 'Cape Corridor via De Aar — dedicated Mn terminal (6→16 Mtpa)' },
+  'Hotazel Manganese→Durban':         { distanceKm: 1100, railType: 'mainline', note: 'Via Kimberley, Bloemfontein, Natal mainline' },
+  'Hotazel Manganese→East London':    { distanceKm: 1000, railType: 'mainline', note: 'New route activated 2024, targeting 1+ Mtpa' },
+
+  // ── Iron Ore (Northern Cape) ──────────────────────────────────────────
+  'Sishen Iron Ore→Saldanha Bay':  { distanceKm: 861, railType: 'heavy_haul', note: 'OREX Line — dedicated heavy-haul (60 Mtpa capacity)' },
+
+  // ── Coal (Mpumalanga / Waterberg) ─────────────────────────────────────
+  'Emalahleni Coal→Richards Bay':  { distanceKm: 588, railType: 'heavy_haul', note: 'Coal Line via Ermelo, Vryheid (RBCT 91 Mtpa design)' },
+  'Ermelo Coal→Richards Bay':      { distanceKm: 350, railType: 'heavy_haul', note: 'Coal Line direct — 200-wagon trains, electrified' },
+  'Waterberg Coal→Richards Bay':   { distanceKm: 550, railType: 'mainline', note: 'Via Ogies junction to Coal Line' },
+  'Emalahleni Coal→Maputo':        { distanceKm: 500, railType: 'mainline', note: 'Maputo Corridor — secondary coal export route' },
+  'Lephalale Coal→Richards Bay':   { distanceKm: 600, railType: 'mainline', note: 'Waterberg via Ogies junction to Coal Line' },
+
+  // ── Copper (Limpopo) ──────────────────────────────────────────────────
+  'Phalaborwa Copper→Richards Bay': { distanceKm: 400, railType: 'mainline', note: 'Via Kaapmuiden, 1986 rail extension' },
+  'Phalaborwa Copper→Maputo':      { distanceKm: 350, railType: 'mainline', note: 'Maputo Corridor via Komatipoort' },
+
+  // ── Platinum (Bushveld Complex) ───────────────────────────────────────
+  // Platinum moves primarily by armoured road, not rail. These are approximate.
+  'Rustenburg Platinum→Durban':     { distanceKm: 620, railType: 'mainline', note: 'Concentrate by rail; refined PGMs by armoured road/air' },
+  'Rustenburg Platinum→Richards Bay': { distanceKm: 700, railType: 'mainline', note: 'Concentrate only — refined PGMs via OR Tambo air freight' },
+
+  // ── Titanium / Mineral Sands ──────────────────────────────────────────
+  'Richards Bay Minerals→Richards Bay': { distanceKm: 5, railType: 'branch', note: 'Mine-to-port — adjacent operations (Rio Tinto RBM)' },
+
+  // ── Vanadium (Mpumalanga) ─────────────────────────────────────────────
+  'Brits Vanadium→Durban':        { distanceKm: 600, railType: 'mainline', note: 'Via Germiston, Natal mainline' },
+  'Brits Vanadium→Richards Bay':  { distanceKm: 680, railType: 'mainline', note: 'NorthCor via Ogies to Coal Line' },
 };
 
 // Port operations (industry averages for SA bulk terminals)

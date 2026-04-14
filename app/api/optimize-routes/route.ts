@@ -48,19 +48,24 @@ export async function GET(request: NextRequest) {
 
   const originCoords = { lat: parseFloat(originLat), lng: parseFloat(originLng) };
 
-  // Destination coordinates
+  // Destination coordinates — optional for FOB/port_gate/mine_gate sell points
   const destLat = params.get('dest_lat');
   const destLng = params.get('dest_lng');
-  const destName = params.get('dest_name') || params.get('destination_name') || 'Destination';
+  const destName = params.get('dest_name') || params.get('destination_name') || '';
 
-  if (!destLat || !destLng) {
+  const needsDestination = ['cfr', 'cif'].includes(sellPoint);
+
+  if (needsDestination && (!destLat || !destLng)) {
     return NextResponse.json(
-      { error: 'Missing required parameters: dest_lat, dest_lng (destination coordinates)' },
+      { error: 'Missing required parameters: dest_lat, dest_lng (destination coordinates) for CIF/CFR sell point' },
       { status: 400 },
     );
   }
 
-  const destinationCoords = { lat: parseFloat(destLat), lng: parseFloat(destLng) };
+  // For FOB sell points, destination is the SA port itself — use dummy coords (optimizer won't calculate ocean freight)
+  const destinationCoords = destLat && destLng
+    ? { lat: parseFloat(destLat), lng: parseFloat(destLng) }
+    : { lat: 0, lng: 0 };
 
   // Index price: from param or try DB
   let indexCifPrice: number | undefined;
@@ -86,6 +91,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Grade (for chrome/manganese — adjusts effective index price)
+  const gradeRaw = params.get('grade');
+  const grade = gradeRaw ? parseFloat(gradeRaw) : undefined;
+
   const result = optimizeTransitRoutes({
     commodity,
     buyPrice,
@@ -93,10 +102,11 @@ export async function GET(request: NextRequest) {
     originCoords,
     originName,
     destinationCoords,
-    destinationName: destName,
+    destinationName: needsDestination ? (destName || 'Destination') : 'FOB at port',
     indexCifPrice,
     buyPoint,
     sellPoint,
+    grade,
   });
 
   return NextResponse.json(result);

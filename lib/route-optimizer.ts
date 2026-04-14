@@ -3,6 +3,12 @@ import { haversineDistance } from './distance';
 import { calculateTimeline, SA_RAIL_ROUTES } from './supply-chain-timeline';
 import type { GeoPoint, CommodityType } from './types';
 import type { TradePoint } from './forward-waterfall';
+import {
+  PORT_CHARGES, ROYALTY_RATES, INLAND_RATES,
+  INSURANCE_RATE, SURVEY_SAMPLING, WEIGHBRIDGE, DISCHARGE_FEES,
+  COMMODITY_HANDLING_MULTIPLIER, COMMODITY_TRANSPORT_MULTIPLIER,
+  ROAD_MAX_KM, REFERENCE_GRADES,
+} from './shipping-constants';
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -55,53 +61,26 @@ const LOADING_PORTS: { name: string; coords: GeoPoint }[] = [
   { name: 'Saldanha Bay', coords: { lat: -33.004, lng: 17.938 } },
   { name: 'Durban', coords: { lat: -29.868, lng: 31.048 } },
   { name: 'Port Elizabeth', coords: { lat: -33.768, lng: 25.629 } },
+  { name: 'Ngqura', coords: { lat: -33.798, lng: 25.685 } },    // Deep-water manganese terminal (16 Mtpa planned)
   { name: 'Maputo', coords: { lat: -25.969, lng: 32.573 } },
 ];
 
-// Commodity-specific preferred ports (not all ports handle all commodities)
+// Commodity-specific preferred ports — ordered by actual export volume share
+// Source: Transnet Freight Rail corridor data, TNPA port statistics, industry reports (2024-2025)
 const COMMODITY_PORTS: Record<string, string[]> = {
-  chrome: ['Richards Bay', 'Durban', 'Maputo'],
-  manganese: ['Saldanha Bay', 'Port Elizabeth', 'Durban'],
-  iron_ore: ['Saldanha Bay', 'Richards Bay'],
-  coal: ['Richards Bay'],
-  platinum: ['Durban', 'Richards Bay'],
-  gold: ['Durban'],
-  copper: ['Durban', 'Richards Bay'],
-  vanadium: ['Durban', 'Richards Bay'],
-  titanium: ['Richards Bay'],
-  aggregates: ['Durban', 'Richards Bay', 'Port Elizabeth'],
+  chrome:    ['Maputo', 'Richards Bay', 'Durban'],              // Maputo >50% of SA chrome exports (road+rail via Komatipoort)
+  manganese: ['Ngqura', 'Saldanha Bay', 'Port Elizabeth', 'Durban'], // Ngqura primary (6→16 Mtpa dedicated terminal), Saldanha MPT 2→8 Mtpa
+  iron_ore:  ['Saldanha Bay'],                                  // OREX dedicated line — no viable alternative
+  coal:      ['Richards Bay', 'Maputo'],                        // RBCT 91 Mtpa design, 52 Mt actual (2024). Secondary: Maputo Corridor
+  platinum:  ['Durban'],                                        // Concentrate via Durban; refined PGMs via OR Tambo air freight
+  gold:      ['Durban'],                                        // Dore bars to Rand Refinery → OR Tambo air; sea via Durban is rare
+  copper:    ['Richards Bay', 'Maputo'],                        // Phalaborwa via 1986 rail extension to RB, or Maputo Corridor
+  vanadium:  ['Durban', 'Richards Bay'],                        // Specialty product, smaller lots via general-purpose terminals
+  titanium:  ['Richards Bay'],                                  // RBM mine-to-port — adjacent operations, ~5km
+  aggregates: ['Durban', 'Richards Bay', 'Port Elizabeth'],     // Mostly domestic; modest export via multi-purpose terminals
 };
 
-// ── Cost constants (mirrored from forward-waterfall) ────────────────────────
-
-const PORT_CHARGES: Record<string, {
-  handling: number; wharfage: number; stevedoring: number; crosshaul: number;
-  agency: number; security: number; customs_broker: number;
-}> = {
-  'Richards Bay':    { handling: 4.00, wharfage: 1.20, stevedoring: 3.00, crosshaul: 1.50, agency: 0.30, security: 0.10, customs_broker: 0.40 },
-  'Saldanha Bay':    { handling: 3.80, wharfage: 1.10, stevedoring: 2.80, crosshaul: 1.20, agency: 0.30, security: 0.10, customs_broker: 0.40 },
-  'Durban':          { handling: 4.50, wharfage: 1.40, stevedoring: 3.50, crosshaul: 2.00, agency: 0.35, security: 0.12, customs_broker: 0.45 },
-  'Port Elizabeth':  { handling: 4.20, wharfage: 1.30, stevedoring: 3.20, crosshaul: 1.80, agency: 0.30, security: 0.10, customs_broker: 0.40 },
-  'Maputo':          { handling: 5.00, wharfage: 1.60, stevedoring: 3.80, crosshaul: 2.20, agency: 0.50, security: 0.15, customs_broker: 0.60 },
-  default:           { handling: 4.50, wharfage: 1.30, stevedoring: 3.20, crosshaul: 1.80, agency: 0.35, security: 0.10, customs_broker: 0.45 },
-};
-
-const INLAND_RATES = {
-  rail: { perTonneKm: 0.032, fixedPerShipment: 200 },
-  road: { perTonneKm: 0.18, fixedPerShipment: 50 },
-};
-
-const ROYALTY_RATES: Record<string, number> = {
-  chrome: 0.03, manganese: 0.03, iron_ore: 0.04, coal: 0.02, aggregates: 0.01,
-  platinum: 0.05, gold: 0.05, copper: 0.03, vanadium: 0.03, titanium: 0.03,
-};
-
-const INSURANCE_RATE = 0.0015;
-const SURVEY_SAMPLING = 0.70;
-const WEIGHBRIDGE = 0.27;
-const DISCHARGE_FEES = 4.50;
-
-const ROAD_MAX_KM = 500; // Road only viable under 500km
+// Cost constants imported from lib/shipping-constants.ts (single source of truth)
 
 // ── Main optimization function ──────────────────────────────────────────────
 
@@ -116,15 +95,21 @@ export function optimizeTransitRoutes(params: {
   indexCifPrice?: number;
   buyPoint?: TradePoint;
   sellPoint?: TradePoint;
+  grade?: number;               // Actual grade (Cr2O3% or Mn%)
 }): RouteOptimizationResult {
   const {
     commodity, buyPrice, volumeTonnes,
     originCoords, originName,
     destinationCoords, destinationName,
-    indexCifPrice,
     buyPoint = 'mine_gate',
     sellPoint = 'cif',
+    grade,
   } = params;
+
+  // Grade-adjust the index price: if trader has 36% chrome vs 42% benchmark, their material is worth less
+  const refGrade = REFERENCE_GRADES[commodity];
+  const gradeMultiplier = (grade && refGrade) ? grade / refGrade : 1.0;
+  const indexCifPrice = params.indexCifPrice ? params.indexCifPrice * gradeMultiplier : undefined;
 
   // Filter to commodity-relevant ports
   const relevantPortNames = COMMODITY_PORTS[commodity] || LOADING_PORTS.map(p => p.name);
@@ -140,7 +125,8 @@ export function optimizeTransitRoutes(params: {
     const haversineNm = haversineDistance(originCoords.lat, originCoords.lng, port.coords.lat, port.coords.lng);
     const fallbackDistKm = haversineNm * 1.852 * 1.3;
 
-    if (fallbackDistKm < ROAD_MAX_KM) {
+    const maxRoadKm = ROAD_MAX_KM[commodity] || ROAD_MAX_KM.default;
+    if (fallbackDistKm < maxRoadKm) {
       modes.push('road');
     }
 
@@ -163,7 +149,9 @@ export function optimizeTransitRoutes(params: {
         }
 
         const rates = INLAND_RATES[mode];
-        const inlandCost = WEIGHBRIDGE + (inlandDistKm * rates.perTonneKm) + (rates.fixedPerShipment / volumeTonnes);
+        const multipliers = COMMODITY_TRANSPORT_MULTIPLIER[commodity] || { rail: 1.0, road: 1.0 };
+        const transportMultiplier = mode === 'road' ? multipliers.road : multipliers.rail;
+        const inlandCost = WEIGHBRIDGE + (inlandDistKm * rates.perTonneKm * transportMultiplier) + (rates.fixedPerShipment / volumeTonnes);
 
         // Inland transit days
         const inlandDays = mode === 'rail'
@@ -172,11 +160,12 @@ export function optimizeTransitRoutes(params: {
 
         // ── 2. Port costs ─────────────────────────────────────────
         const portCharges = PORT_CHARGES[port.name] || PORT_CHARGES.default;
+        const handlingMultiplier = COMMODITY_HANDLING_MULTIPLIER[commodity] || 1.0;
         const portCosts =
-          portCharges.handling +
+          (portCharges.handling * handlingMultiplier) +
           portCharges.wharfage +
-          portCharges.stevedoring +
-          portCharges.crosshaul +
+          (portCharges.stevedoring * handlingMultiplier) +
+          (portCharges.crosshaul * handlingMultiplier) +
           portCharges.agency +
           portCharges.security +
           portCharges.customs_broker +
@@ -210,7 +199,9 @@ export function optimizeTransitRoutes(params: {
         }
 
         // ── 4. Insurance ──────────────────────────────────────────
-        const subtotalPreInsurance = buyPrice + inlandCost + portCosts + royalty + oceanFreight + DISCHARGE_FEES;
+        // Discharge fees only apply when delivering to destination (CFR/CIF)
+        const dischargeFees = needsOcean ? DISCHARGE_FEES : 0;
+        const subtotalPreInsurance = buyPrice + inlandCost + portCosts + royalty + oceanFreight + dischargeFees;
         const insurance = sellPoint === 'cif' ? subtotalPreInsurance * INSURANCE_RATE : 0;
 
         // ── 5. Total cost ─────────────────────────────────────────
@@ -269,17 +260,20 @@ export function optimizeTransitRoutes(params: {
   routes.forEach((r, i) => { r.rank = i + 1; });
 
   // Best-of selections
+  const isFob = !['cfr', 'cif'].includes(sellPoint);
   const bestByMargin = routes[0] || null;
   const bestBySpeed = routes.length > 0
     ? routes.reduce((best, r) => r.totalDays < best.totalDays ? r : best)
     : null;
   const bestByFreight = routes.length > 0
-    ? routes.reduce((best, r) => r.oceanFreight < best.oceanFreight ? r : best)
+    ? (isFob
+      ? routes.reduce((best, r) => r.totalCostPerTonne < best.totalCostPerTonne ? r : best)
+      : routes.reduce((best, r) => r.oceanFreight < best.oceanFreight ? r : best))
     : null;
 
   return {
     origin: originName,
-    destination: destinationName,
+    destination: isFob ? 'FOB at best port' : destinationName,
     commodity,
     buyPrice,
     volumeTonnes,

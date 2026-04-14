@@ -227,6 +227,36 @@ export interface DealSimulationRecord {
   created_at: string;
 }
 
+export interface DealScenario {
+  id: string;
+  user_id: string | null;
+  name: string;
+  share_token: string | null;
+  commodity: string;
+  commodity_subtype: string | null;
+  grade: number | null;
+  sell_price: number;
+  sell_point: string;
+  buy_point: string;
+  volume_tonnes: number;
+  mine_name: string | null;
+  loading_port: string | null;
+  destination_name: string | null;
+  breakeven_buy_price: number | null;
+  total_costs: number | null;
+  selected_route: Record<string, unknown> | null;
+  all_routes: Record<string, unknown>[] | null;
+  cost_breakdown: Record<string, unknown>[] | null;
+  verification_checkpoints: Record<string, unknown>[] | null;
+  transport_mode: string | null;
+  fx_hedge: string | null;
+  cost_overrides: Record<string, number> | null;
+  index_price_used: number | null;
+  deal_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DealSignature {
   id: string;
   deal_id: string;

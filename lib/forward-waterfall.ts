@@ -5,6 +5,10 @@ import {
   FX_HEDGE_COSTS, COMMODITY_HEDGE_COSTS, type FxHedgeType,
 } from './price-waterfall';
 import type { DataQuality } from './data-sources';
+import {
+  PORT_CHARGES, ROYALTY_RATES, INLAND_RATES,
+  INSURANCE_RATE, SURVEY_SAMPLING, WEIGHBRIDGE, DISCHARGE_FEES,
+} from './shipping-constants';
 
 // ── Trade point types ──────────────────────────────────────────────────────
 
@@ -36,7 +40,7 @@ const POSITION_ORDER: CostPosition[] = [
 ];
 
 // Map each trade point to the corridor index where costs START (first segment after that point)
-const POINT_TO_START: Record<TradePoint, number> = {
+export const POINT_TO_START: Record<TradePoint, number> = {
   mine_gate: 0,
   stockpile: 1,
   port_gate: 2,
@@ -46,7 +50,7 @@ const POINT_TO_START: Record<TradePoint, number> = {
 };
 
 // Map each trade point to the corridor index where costs END (exclusive upper bound)
-const POINT_TO_END: Record<TradePoint, number> = {
+export const POINT_TO_END: Record<TradePoint, number> = {
   mine_gate: 0,
   stockpile: 1,
   port_gate: 2,
@@ -125,34 +129,7 @@ export interface DealSimulation {
   breakevenMineGate: number | null;
 }
 
-// ── Constants ──────────────────────────────────────────────────────────────
-
-const PORT_CHARGES: Record<string, {
-  handling: number; wharfage: number; stevedoring: number; crosshaul: number;
-  agency: number; security: number; customs_broker: number; storage_per_week: number;
-}> = {
-  'Richards Bay':    { handling: 4.00, wharfage: 1.20, stevedoring: 3.00, crosshaul: 1.50, agency: 0.30, security: 0.10, customs_broker: 0.40, storage_per_week: 1.80 },
-  'Saldanha Bay':    { handling: 3.80, wharfage: 1.10, stevedoring: 2.80, crosshaul: 1.20, agency: 0.30, security: 0.10, customs_broker: 0.40, storage_per_week: 1.50 },
-  'Durban':          { handling: 4.50, wharfage: 1.40, stevedoring: 3.50, crosshaul: 2.00, agency: 0.35, security: 0.12, customs_broker: 0.45, storage_per_week: 2.00 },
-  'Port Elizabeth':  { handling: 4.20, wharfage: 1.30, stevedoring: 3.20, crosshaul: 1.80, agency: 0.30, security: 0.10, customs_broker: 0.40, storage_per_week: 1.70 },
-  'Maputo':          { handling: 5.00, wharfage: 1.60, stevedoring: 3.80, crosshaul: 2.20, agency: 0.50, security: 0.15, customs_broker: 0.60, storage_per_week: 2.20 },
-  default:           { handling: 4.50, wharfage: 1.30, stevedoring: 3.20, crosshaul: 1.80, agency: 0.35, security: 0.10, customs_broker: 0.45, storage_per_week: 1.80 },
-};
-
-const ROYALTY_RATES: Record<string, number> = {
-  chrome: 0.03, manganese: 0.03, iron_ore: 0.04, coal: 0.02, aggregates: 0.01,
-  platinum: 0.05, gold: 0.05, copper: 0.03, vanadium: 0.03, titanium: 0.03,
-};
-
-const INLAND_RATES = {
-  rail: { perTonneKm: 0.032, fixedPerShipment: 200 },
-  road: { perTonneKm: 0.18, fixedPerShipment: 50 },
-};
-
-const INSURANCE_RATE = 0.0015;
-const SURVEY_SAMPLING = 0.70;
-const WEIGHBRIDGE = 0.27;
-const DISCHARGE_FEES = 4.50;
+// Cost constants imported from lib/shipping-constants.ts (single source of truth)
 
 const STAGE_DURATIONS = {
   mine_to_port_rail: 3,
