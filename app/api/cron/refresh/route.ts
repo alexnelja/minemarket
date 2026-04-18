@@ -221,6 +221,43 @@ export async function GET(request: NextRequest) {
       } catch { /* skip individual LBMA feed on error */ }
     }
 
+    // --- COMEX copper daily close via Yahoo Finance (free, delayed ~15m) ---
+    // Not LME-official — the true LME feed is paid. COMEX copper (HG=F) tracks
+    // LME copper to within ~0.5% so it's a usable daily reference until a
+    // paid/Bloomberg feed replaces it. Price is in $/lb, converted to $/tonne
+    // (1 tonne = 2204.62 lb).
+    let comexCopperIngested = 0;
+    try {
+      const { parseYahooChartResponse } = await import('@/lib/commodity-fetchers');
+      const cuRes = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/HG%3DF?interval=1d&range=1mo');
+      if (cuRes.ok) {
+        const raw = await cuRes.json();
+        const points = parseYahooChartResponse(raw);
+        if (points.length > 0) {
+          // Drop prior comex_delayed_yahoo copper rows, reinsert the window.
+          await admin.from('commodity_prices')
+            .delete()
+            .eq('commodity', 'copper')
+            .eq('source', 'comex_delayed_yahoo');
+
+          const POUNDS_PER_TONNE = 2204.62;
+          const rows = points.map((p) => ({
+            commodity: 'copper',
+            price_usd: Math.round(p.price * POUNDS_PER_TONNE * 100) / 100,
+            unit: 'per_tonne',
+            source: 'comex_delayed_yahoo',
+            period: p.date,
+            recorded_at: new Date().toISOString(),
+          }));
+
+          for (let i = 0; i < rows.length; i += 100) {
+            await admin.from('commodity_prices').insert(rows.slice(i, i + 100));
+          }
+          comexCopperIngested = rows.length;
+        }
+      }
+    } catch { /* don't let Yahoo failure break the whole cron */ }
+
     // Update platform-derived prices from recent deals
     const commodities = ['chrome', 'manganese', 'iron_ore', 'coal', 'platinum', 'gold', 'copper', 'vanadium', 'titanium', 'aggregates'];
     let pricesUpdated = 0;
@@ -248,7 +285,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    results.prices = { ...(results.prices as Record<string, unknown> || {}), lbma_prices_ingested: lbmaPricesIngested, platform_prices_updated: pricesUpdated };
+    results.prices = {
+      ...(results.prices as Record<string, unknown> || {}),
+      lbma_prices_ingested: lbmaPricesIngested,
+      comex_copper_ingested: comexCopperIngested,
+      platform_prices_updated: pricesUpdated,
+    };
   } catch (err) {
     results.prices = { error: String(err) };
   }

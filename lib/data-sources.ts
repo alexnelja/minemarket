@@ -34,6 +34,7 @@ export const DATA_SOURCES: Record<string, DataSource> = {
   lbma_palladium: { id: 'lbma_palladium', name: 'LBMA Palladium Price', quality: 'published', url: 'https://www.lbma.org.uk/prices-and-data', updateFrequency: 'daily', note: 'Official daily fix' },
   lbma_silver: { id: 'lbma_silver', name: 'LBMA Silver Price', quality: 'published', url: 'https://www.lbma.org.uk/prices-and-data', updateFrequency: 'daily', note: 'Official daily fix' },
   world_bank: { id: 'world_bank', name: 'World Bank Pink Sheet', quality: 'published', url: 'https://www.worldbank.org/en/research/commodity-markets', updateFrequency: 'monthly', note: 'Monthly averages — 1-2 month lag', upgradeAvailable: 'Commodities-API ($20/mo) for daily iron ore + coal' },
+  comex_delayed_yahoo: { id: 'comex_delayed_yahoo', name: 'COMEX Futures (Yahoo)', quality: 'published', url: 'https://finance.yahoo.com/quote/HG%3DF', updateFrequency: 'daily', note: 'Daily close from Yahoo Finance chart API — COMEX copper (HG=F). Delayed ~15m. Tracks LME copper to within ~0.5%, used as a daily proxy.', upgradeAvailable: 'LME Real-Time feed or Bloomberg for official LME settle' },
   fred: { id: 'fred', name: 'FRED (Federal Reserve)', quality: 'published', url: 'https://fred.stlouisfed.org/', updateFrequency: 'monthly', note: 'IMF data via FRED — monthly', upgradeAvailable: 'Platts IODEX ($5-15K/yr) for daily iron ore' },
   smm: { id: 'smm', name: 'SMM/Metal.com', quality: 'published', url: 'https://www.metal.com/', updateFrequency: 'daily', note: 'Shanghai Metals Market — daily Chinese port prices' },
   trading_economics: { id: 'trading_economics', name: 'Trading Economics', quality: 'published', url: 'https://tradingeconomics.com/commodities', updateFrequency: 'daily', note: 'Aggregated from multiple exchanges' },
@@ -75,6 +76,7 @@ export function getPriceSource(commodity: string, source?: string): DataSource {
     return DATA_SOURCES[lbmaMap[commodity]] || DATA_SOURCES.benchmark;
   }
   if (source === 'world_bank' || source === 'fred') return DATA_SOURCES[source];
+  if (source === 'comex_delayed_yahoo') return DATA_SOURCES.comex_delayed_yahoo;
   if (source === 'smm') return DATA_SOURCES.smm;
   if (source === 'trading_economics') return DATA_SOURCES.trading_economics;
   if (source === 'platform_avg' || source === 'platform_deals') return DATA_SOURCES.platform_avg;
