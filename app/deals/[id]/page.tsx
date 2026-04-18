@@ -292,6 +292,18 @@ export default async function DealDetailPage({ params }: DealDetailPageProps) {
               commodity={deal.commodity_type}
               documents={documents}
             />
+            <a
+              href={`/api/deals/${deal.id}/term-sheet`}
+              className="block bg-gray-900 border border-gray-800 rounded-xl px-6 py-4 text-sm text-white hover:bg-gray-800/60 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold">Download Term Sheet</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Commercial + spec summary as PDF</p>
+                </div>
+                <span className="text-xs text-amber-400">PDF ↓</span>
+              </div>
+            </a>
             <details className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
               <summary className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-800/30">
                 Verification & Inspection
